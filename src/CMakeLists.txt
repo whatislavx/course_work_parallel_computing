@@ -8,6 +8,8 @@ add_library(search_core STATIC
     index/document_source.cpp
     index/term_table.cpp
     index/inverted_index.cpp
+    pool/task_queue.cpp
+    pool/thread_pool.cpp
     server/http_server.cpp
     server/router.cpp
     ollama/endpoint.cpp
