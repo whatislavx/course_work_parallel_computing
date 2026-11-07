@@ -26,7 +26,7 @@ class Session : public std::enable_shared_from_this<Session> {
   public:
     Session(tcp::socket socket, const ServerOptions &options)
         : stream_(std::move(socket)), max_body_bytes_(options.max_request_body_bytes),
-          timeout_(options.request_timeout) {}
+          timeout_(options.request_timeout), ollama_check_(options.ollama_check) {}
 
     void start() { read_header(); }
 
@@ -51,11 +51,16 @@ class Session : public std::enable_shared_from_this<Session> {
             return;
         }
 
-        dispatch();
+        if (is_health_request(parser_.get()) && ollama_check_) {
+            ollama_check_(
+                [self = shared_from_this()](bool available) { self->dispatch(available); });
+            return;
+        }
+        dispatch(false);
     }
 
-    void dispatch() {
-        Response response = route(parser_.get());
+    void dispatch(bool ollama_available) {
+        Response response = route(parser_.get(), ollama_available);
         if (response.result() != http::status::not_implemented) {
             // 200, 404, 405: тіло запиту не читаємо.
             send(std::move(response));
@@ -87,7 +92,7 @@ class Session : public std::enable_shared_from_this<Session> {
             close();
             return;
         }
-        send(route(parser_.get()));
+        send(route(parser_.get(), false));
     }
 
     static Response payload_too_large() {
@@ -137,6 +142,7 @@ class Session : public std::enable_shared_from_this<Session> {
     http::request_parser<http::string_body> parser_;
     std::size_t max_body_bytes_;
     std::chrono::milliseconds timeout_;
+    OllamaCheck ollama_check_;
     std::array<char, 4096> scratch_{};
     std::size_t drained_ = 0;
 };

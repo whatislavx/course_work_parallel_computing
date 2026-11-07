@@ -1,5 +1,7 @@
 #include "config/config.hpp"
 
+#include "ollama/endpoint.hpp"
+
 #include <charconv>
 #include <cstdlib>
 #include <string>
@@ -47,15 +49,22 @@ Config parse_config(const EnvLookup &lookup) {
         cfg.max_request_body_bytes =
             parse_integer<std::size_t>("MAX_REQUEST_BODY_BYTES", *v, 1, std::size_t{1} << 30);
     }
-    if (const auto v = lookup("REQUEST_TIMEOUT_MS")) {
-        cfg.request_timeout_ms = parse_integer<std::size_t>("REQUEST_TIMEOUT_MS", *v, 1, 3600000);
-    }
     if (const auto v = lookup("HEALTH_CHECK_TIMEOUT_MS")) {
         cfg.health_check_timeout_ms =
             parse_integer<std::size_t>("HEALTH_CHECK_TIMEOUT_MS", *v, 1, 3600000);
     }
+    if (const auto v = lookup("REQUEST_TIMEOUT_MS")) {
+        cfg.request_timeout_ms = parse_integer<std::size_t>("REQUEST_TIMEOUT_MS", *v, 1, 3600000);
+    }
     if (const auto v = lookup("OLLAMA_URL")) {
         cfg.ollama_url = parse_non_empty("OLLAMA_URL", *v);
+    }
+    if (const auto v = lookup("OLLAMA_MODEL")) {
+        cfg.ollama_model = *v;
+    }
+    if (!ollama::parse_ollama_url(cfg.ollama_url, cfg.ollama_model)) {
+        throw ConfigError("OLLAMA_URL: очікується http://хост[:порт] без шляху, отримано '" +
+                          cfg.ollama_url + "'");
     }
     return cfg;
 }

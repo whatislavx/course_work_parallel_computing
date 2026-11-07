@@ -7,13 +7,18 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 namespace search::server {
+
+// Асинхронна перевірка Ollama: викликає callback рівно один раз з результатом.
+using OllamaCheck = std::function<void(std::function<void(bool)>)>;
 
 struct ServerOptions {
     std::uint16_t port = 8080; // 0 — операційна система обирає порт (для тестів)
     std::size_t max_request_body_bytes = 1 << 20;
     std::chrono::milliseconds request_timeout{10000};
+    OllamaCheck ollama_check; // порожньо = Ollama вважається недоступною
 };
 
 // Один запит на з'єднання (Connection: close). Keep-alive і паралелізм — у TCK-019.
