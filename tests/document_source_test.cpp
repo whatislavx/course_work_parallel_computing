@@ -110,3 +110,45 @@ TEST(Utf8, ValidatesSequences) {
     EXPECT_FALSE(search::index::is_valid_utf8("\xED\xA0\x80")); // сурогат
     EXPECT_FALSE(search::index::is_valid_utf8("\xE2\x82")); // обрізана послідовність
 }
+
+TEST(DocumentSource, UnreadableRootThrowsDatasetError) {
+    TempDir dir;
+    write_file(dir.path() / "a.txt", "alpha");
+    fs::permissions(dir.path(), fs::perms::none);
+    struct Restore {
+        fs::path p;
+        ~Restore() {
+            std::error_code ignored;
+            fs::permissions(p, fs::perms::owner_all, ignored);
+        }
+    } restore{dir.path()};
+    std::error_code probe_ec;
+    if (fs::directory_iterator(dir.path(), probe_ec), !probe_ec) {
+        GTEST_SKIP() << "каталог читається попри chmod 000 (ймовірно, root)";
+    }
+    EXPECT_THROW(load_documents(dir.path()), DatasetError);
+}
+
+TEST(DocumentSource, UnreadableSubdirectoryIsSkippedWithReason) {
+    TempDir dir;
+    write_file(dir.path() / "a.txt", "alpha");
+    write_file(dir.path() / "locked" / "b.txt", "beta");
+    fs::permissions(dir.path() / "locked", fs::perms::none);
+    struct Restore {
+        fs::path p;
+        ~Restore() {
+            std::error_code ignored;
+            fs::permissions(p, fs::perms::owner_all, ignored);
+        }
+    } restore{dir.path() / "locked"};
+    std::error_code probe_ec;
+    if (fs::directory_iterator(dir.path() / "locked", probe_ec), !probe_ec) {
+        GTEST_SKIP() << "каталог читається попри chmod 000 (ймовірно, root)";
+    }
+    const auto result = load_documents(dir.path());
+    ASSERT_EQ(result.documents.size(), 1U);
+    EXPECT_EQ(result.documents[0].doc_id, "a.txt");
+    ASSERT_EQ(result.skipped.size(), 1U);
+    EXPECT_EQ(result.skipped[0].doc_id, "locked");
+    EXPECT_EQ(result.skipped[0].reason, "unreadable directory");
+}

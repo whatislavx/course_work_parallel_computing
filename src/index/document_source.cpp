@@ -79,8 +79,17 @@ DiscoveryResult load_documents(const fs::path &dir) {
         throw DatasetError("dataset directory is missing or not a directory: " + dir.string());
     }
 
+    // Корінь має бути читабельним: інакше обхід мовчки дав би 0 документів (AC-003.3).
+    {
+        fs::directory_iterator probe(dir, ec);
+        if (ec) {
+            throw DatasetError("dataset directory is not readable: " + dir.string());
+        }
+    }
+
     DiscoveryResult result;
-    // skip_permission_denied: недоступний підкаталог не валить всю побудову (OQ-19).
+    // skip_permission_denied лишається як страховка; недоступні підкаталоги перевіряються
+    // явно нижче, щоб запис про пропуск потрапив у skipped (FR-003, OQ-19).
     fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec);
     if (ec) {
         throw DatasetError("dataset traversal failed: " + ec.message());
@@ -91,6 +100,22 @@ DiscoveryResult load_documents(const fs::path &dir) {
         // lexically_relative не розкриває симлінки, на відміну від relative (OQ-18).
         std::string doc_id = entry.path().lexically_relative(dir).generic_string();
         std::error_code entry_ec;
+        if (!entry.is_symlink(entry_ec) && entry.is_directory(entry_ec) && !entry_ec) {
+            // Звичайний підкаталог: якщо його не можна відкрити, пропускаємо з причиною і не
+            // заходимо.
+            std::error_code open_ec;
+            fs::directory_iterator probe(entry.path(), open_ec);
+            if (open_ec) {
+                result.skipped.push_back({std::move(doc_id), "unreadable directory"});
+                it.disable_recursion_pending();
+                it.increment(ec);
+                if (ec) {
+                    throw DatasetError("dataset traversal failed: " + ec.message());
+                }
+                continue;
+            }
+        }
+        entry_ec.clear();
         const bool regular = entry.is_regular_file(entry_ec);
         if (entry_ec) {
             result.skipped.push_back({std::move(doc_id), "unreadable"});
