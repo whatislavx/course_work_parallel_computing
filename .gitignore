@@ -1,0 +1,64 @@
+# --- Python (scripts, benchmarks) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- C / C++ / Java / C# build artifacts ---
+*.o
+*.obj
+*.so
+*.a
+*.exe
+*.class
+*.jar
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+bin/
+obj/
+target/
+.vs/
+
+# --- Datasets (large; download per course instructions) ---
+data/
+dataset/
+
+# --- Benchmark raw output (aggregated results are committed) ---
+benchmarks/results/raw/
+
+# --- Report LaTeX build files ---
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*.out.ps
+
+# --- Office lock/temp files ---
+~$*
+*.tmp
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Secrets ---
+.env
+*.pem
+*.key
+
+# --- Claude Code local settings ---
+.claude/settings.local.json

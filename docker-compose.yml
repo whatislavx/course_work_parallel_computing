@@ -1,0 +1,11 @@
+# Partial configuration: the search server service is added once the backend is built (T-011).
+services:
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  ollama-data:
