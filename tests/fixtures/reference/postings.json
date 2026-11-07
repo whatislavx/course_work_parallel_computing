@@ -1,0 +1,169 @@
+{
+  "a": [
+    "d01.txt",
+    "d02.txt"
+  ],
+  "access": [
+    "d03.txt"
+  ],
+  "after": [
+    "d09.txt"
+  ],
+  "an": [
+    "d04.txt"
+  ],
+  "and": [
+    "d07.txt"
+  ],
+  "answered": [
+    "d09.txt"
+  ],
+  "automobile": [
+    "d04.txt",
+    "d11.txt"
+  ],
+  "built": [
+    "d08.txt"
+  ],
+  "by": [
+    "d08.txt"
+  ],
+  "car": [
+    "d05.txt"
+  ],
+  "checks": [
+    "d10.txt"
+  ],
+  "concurrent": [
+    "d03.txt"
+  ],
+  "drives": [
+    "d04.txt",
+    "d05.txt"
+  ],
+  "engine": [
+    "d01.txt"
+  ],
+  "finishes": [
+    "d09.txt"
+  ],
+  "for": [
+    "d12.txt"
+  ],
+  "guard": [
+    "d07.txt"
+  ],
+  "health": [
+    "d10.txt"
+  ],
+  "index": [
+    "d02.txt",
+    "d08.txt"
+  ],
+  "is": [
+    "d08.txt",
+    "d09.txt"
+  ],
+  "limits": [
+    "d03.txt"
+  ],
+  "mutex": [
+    "d02.txt",
+    "d07.txt"
+  ],
+  "of": [
+    "d12.txt"
+  ],
+  "on": [
+    "d04.txt",
+    "d05.txt"
+  ],
+  "parallel": [
+    "d01.txt",
+    "d06.txt",
+    "d11.txt"
+  ],
+  "pool": [
+    "d01.txt",
+    "d06.txt",
+    "d07.txt",
+    "d12.txt"
+  ],
+  "protects": [
+    "d02.txt"
+  ],
+  "query": [
+    "d09.txt"
+  ],
+  "race": [
+    "d11.txt"
+  ],
+  "responds": [
+    "d10.txt"
+  ],
+  "road": [
+    "d04.txt",
+    "d05.txt",
+    "d11.txt"
+  ],
+  "search": [
+    "d01.txt",
+    "d09.txt"
+  ],
+  "semaphore": [
+    "d03.txt",
+    "d07.txt"
+  ],
+  "server": [
+    "d10.txt"
+  ],
+  "share": [
+    "d06.txt"
+  ],
+  "shared": [
+    "d02.txt"
+  ],
+  "tasks": [
+    "d12.txt"
+  ],
+  "the": [
+    "d01.txt",
+    "d02.txt",
+    "d03.txt",
+    "d04.txt",
+    "d05.txt",
+    "d06.txt",
+    "d07.txt",
+    "d08.txt",
+    "d09.txt",
+    "d10.txt",
+    "d11.txt",
+    "d12.txt"
+  ],
+  "thread": [
+    "d01.txt",
+    "d03.txt",
+    "d06.txt"
+  ],
+  "threads": [
+    "d06.txt",
+    "d08.txt",
+    "d12.txt"
+  ],
+  "to": [
+    "d10.txt",
+    "d11.txt"
+  ],
+  "uses": [
+    "d01.txt"
+  ],
+  "waits": [
+    "d12.txt"
+  ],
+  "was": [
+    "d11.txt"
+  ],
+  "worker": [
+    "d08.txt"
+  ]
+}

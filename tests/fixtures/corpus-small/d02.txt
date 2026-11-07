@@ -1,0 +1,1 @@
+A mutex protects the shared index.
