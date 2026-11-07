@@ -7,6 +7,7 @@ add_executable(search_tests
     inverted_index_test.cpp
     thread_pool_test.cpp
     shared_inverted_index_test.cpp
+    index_builder_test.cpp
     ollama_test.cpp
 )
 target_link_libraries(search_tests PRIVATE search_core GTest::gtest_main)
