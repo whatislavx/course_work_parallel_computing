@@ -9,6 +9,7 @@ add_library(search_core STATIC
     index/term_table.cpp
     index/inverted_index.cpp
     index/shared_inverted_index.cpp
+    index/index_builder.cpp
     pool/task_queue.cpp
     pool/thread_pool.cpp
     server/http_server.cpp
