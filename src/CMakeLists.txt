@@ -6,6 +6,8 @@ add_library(search_core STATIC
     config/config.cpp
     index/tokenizer.cpp
     index/document_source.cpp
+    index/term_table.cpp
+    index/inverted_index.cpp
     server/http_server.cpp
     server/router.cpp
     ollama/endpoint.cpp
