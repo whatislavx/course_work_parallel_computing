@@ -93,11 +93,13 @@ TEST(IndexManager, FailedRebuildKeepsPreviousIndexActive) {
     ASSERT_TRUE(manager.start_build(data.path(), 2));
     manager.wait_for_build();
 
+    const auto before = manager.snapshot();
     ASSERT_TRUE(manager.start_build(data.path() / "missing", 2));
     manager.wait_for_build();
 
     EXPECT_EQ(manager.state(), IndexState::Ready);
     ASSERT_NE(manager.snapshot(), nullptr);
+    EXPECT_EQ(manager.snapshot(), before); // той самий знімок, а не інший індекс
     EXPECT_EQ(manager.snapshot()->document_count(), 1U);
     EXPECT_TRUE(manager.last_error().has_value());
     EXPECT_EQ(manager.stats().documents, 1U);
