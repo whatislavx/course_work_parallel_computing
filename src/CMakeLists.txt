@@ -4,6 +4,7 @@ find_package(Threads REQUIRED)
 # Бібліотека серверних модулів: конфігурація, HTTP-сервер, перевірка Ollama (TCK-002, 003, 005).
 add_library(search_core STATIC
     config/config.cpp
+    index/tokenizer.cpp
     server/http_server.cpp
     server/router.cpp
     ollama/endpoint.cpp
