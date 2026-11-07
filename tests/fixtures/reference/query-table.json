@@ -1,0 +1,41 @@
+{
+  "parallel": [
+    "d01.txt",
+    "d06.txt",
+    "d11.txt"
+  ],
+  "thread pool": [
+    "d01.txt",
+    "d06.txt"
+  ],
+  "mutex": [
+    "d02.txt",
+    "d07.txt"
+  ],
+  "semaphore": [
+    "d03.txt",
+    "d07.txt"
+  ],
+  "automobile": [
+    "d04.txt",
+    "d11.txt"
+  ],
+  "car": [
+    "d05.txt"
+  ],
+  "the": [
+    "d01.txt",
+    "d02.txt",
+    "d03.txt",
+    "d04.txt",
+    "d05.txt",
+    "d06.txt",
+    "d07.txt",
+    "d08.txt",
+    "d09.txt",
+    "d10.txt",
+    "d11.txt",
+    "d12.txt"
+  ],
+  "missing-term": []
+}
