@@ -5,6 +5,7 @@ find_package(Threads REQUIRED)
 add_library(search_core STATIC
     config/config.cpp
     index/tokenizer.cpp
+    index/document_source.cpp
     server/http_server.cpp
     server/router.cpp
     ollama/endpoint.cpp
