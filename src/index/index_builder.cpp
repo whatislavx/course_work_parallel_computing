@@ -38,21 +38,25 @@ std::unique_ptr<SharedInvertedIndex> build_index(const std::vector<Document> &do
     }
 
     // Чекаємо всі порції, навіть після першого збою: задачі мають завершитися до повернення.
+    // Прапорець окремо від тексту: виняток із порожнім what() теж є збоєм.
+    bool failed = false;
     std::string first_error;
     for (std::future<void> &chunk : chunks) {
         try {
             chunk.get();
         } catch (const std::exception &e) {
-            if (first_error.empty()) {
+            if (!failed) {
+                failed = true;
                 first_error = e.what();
             }
         } catch (...) {
-            if (first_error.empty()) {
+            if (!failed) {
+                failed = true;
                 first_error = "невідомий виняток";
             }
         }
     }
-    if (!first_error.empty()) {
+    if (failed) {
         throw IndexBuildError("index_build_failed: " + first_error);
     }
     return index;

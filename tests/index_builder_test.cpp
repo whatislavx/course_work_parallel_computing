@@ -2,8 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -67,7 +70,9 @@ void expect_matches_reference(const search::index::SharedInvertedIndex &actual,
 // TEST-IT-01 / TEST-CONC-01: результат паралельної побудови збігається з еталоном для всіх p.
 TEST(IndexBuilder, ParallelBuildMatchesSequentialReferenceForAllThreadCounts) {
     const auto docs = make_corpus(300, 3);
-    for (std::size_t threads : {1U, 2U, 3U, 4U, 8U}) {
+    const std::size_t logical_cpus = std::max(1U, std::thread::hardware_concurrency());
+    for (std::size_t threads : {std::size_t{1}, std::size_t{2}, std::size_t{3}, std::size_t{4},
+                                std::size_t{8}, logical_cpus}) {
         const auto index = build_index(docs, threads);
         expect_matches_reference(*index, docs);
     }
@@ -105,4 +110,26 @@ TEST(IndexBuilder, TaskExceptionFailsTheBuild) {
         return tokenize(text);
     };
     EXPECT_THROW(build_index(docs, 4, failing), IndexBuildError);
+}
+
+// Виняток із порожнім повідомленням також є збоєм побудови (раніше тихо проходив).
+TEST(IndexBuilder, ExceptionWithEmptyMessageStillFailsTheBuild) {
+    const auto docs = make_corpus(10, 4);
+    const search::index::DocumentTokenizer silent_failure =
+        [](std::string_view) -> std::vector<std::string> { throw std::runtime_error(""); };
+    EXPECT_THROW(build_index(docs, 2, silent_failure), IndexBuildError);
+}
+
+TEST(IndexBuilder, FailureMessageCarriesErrorCodePrefix) {
+    const auto docs = make_corpus(5, 6);
+    const search::index::DocumentTokenizer failing =
+        [](std::string_view) -> std::vector<std::string> { throw std::runtime_error("disk gone"); };
+    try {
+        build_index(docs, 2, failing);
+        FAIL() << "expected IndexBuildError";
+    } catch (const IndexBuildError &e) {
+        const std::string message = e.what();
+        EXPECT_NE(message.find("index_build_failed"), std::string::npos);
+        EXPECT_NE(message.find("disk gone"), std::string::npos);
+    }
 }
