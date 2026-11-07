@@ -45,3 +45,17 @@ TEST(Tokenizer, EmptyAndPunctuationOnlyYieldNoTokens) {
     EXPECT_TRUE(tokenize("").empty());
     EXPECT_TRUE(tokenize(" ,.!? \n\t").empty());
 }
+
+TEST(Tokenizer, LowercasesLatinExtendedA) {
+    EXPECT_EQ(tokenize("ŁÓDŹ łódź"), (Tokens{"łódź", "łódź"}));
+    EXPECT_EQ(tokenize("ŠŽ"), (Tokens{"šž"}));
+    EXPECT_EQ(tokenize("Ąą Ćć Ęę"), (Tokens{"ąą", "ćć", "ęę"}));
+    EXPECT_EQ(tokenize("Ÿ"), (Tokens{"ÿ"}));
+}
+
+TEST(Tokenizer, LowercasesGreekIncludingAccentedAndFinalSigma) {
+    EXPECT_EQ(tokenize("Ά Έ Ό Ύ Ώ"), (Tokens{"ά", "έ", "ό", "ύ", "ώ"}));
+    EXPECT_EQ(tokenize("ΟΔΟΣ"), (Tokens{"οδοσ"}));
+    EXPECT_EQ(tokenize("οδος"), (Tokens{"οδοσ"}));
+    EXPECT_EQ(tokenize("Ϊ Ϋ"), (Tokens{"ϊ", "ϋ"}));
+}
