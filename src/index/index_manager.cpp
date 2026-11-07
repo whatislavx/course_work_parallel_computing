@@ -17,6 +17,7 @@ bool IndexManager::start_build(std::filesystem::path dataset_dir, std::size_t th
     if (threads == 0) {
         throw std::invalid_argument("start_build: потрібен принаймні один потік");
     }
+    std::thread previous;
     {
         std::lock_guard lock(mutex_);
         if (building_) {
@@ -24,17 +25,33 @@ bool IndexManager::start_build(std::filesystem::path dataset_dir, std::size_t th
         }
         building_ = true;
         state_ = active_ ? IndexState::Rebuilding : IndexState::Building;
+        // Потік попередньої побудови вже завершив роботу (building_ був false), його лише
+        // приєднуємо. builder_ змінюється тільки під замком.
+        previous = std::move(builder_);
+        try {
+            builder_ = std::thread(
+                [this, dir = std::move(dataset_dir), threads] { run_build(dir, threads); });
+        } catch (...) {
+            // Не вдалося створити потік: скидаємо стан, щоб не застрягнути в Building.
+            building_ = false;
+            state_ = active_ ? IndexState::Ready : IndexState::Empty;
+            throw;
+        }
     }
-    // Попередня побудова вже завершилася (building_ був false), тож її потік можна приєднати.
-    wait_for_build_thread();
-    builder_ =
-        std::thread([this, dir = std::move(dataset_dir), threads] { run_build(dir, threads); });
+    if (previous.joinable()) {
+        previous.join();
+    }
     return true;
 }
 
 void IndexManager::wait_for_build_thread() {
-    if (builder_.joinable()) {
-        builder_.join();
+    std::thread current;
+    {
+        std::lock_guard lock(mutex_);
+        current = std::move(builder_);
+    }
+    if (current.joinable()) {
+        current.join();
     }
 }
 
@@ -60,6 +77,13 @@ void IndexManager::run_build(std::filesystem::path dataset_dir, std::size_t thre
     } catch (const std::exception &e) {
         std::lock_guard lock(mutex_);
         last_error_ = e.what();
+        // Збій не чіпає активний індекс: повертаємося до стану, що був до побудови.
+        state_ = active_ ? IndexState::Ready : IndexState::Empty;
+        building_ = false;
+    } catch (...) {
+        // Виняток не має вийти з робочого потоку (std::terminate).
+        std::lock_guard lock(mutex_);
+        last_error_ = "unknown error";
         // Збій не чіпає активний індекс: повертаємося до стану, що був до побудови.
         state_ = active_ ? IndexState::Ready : IndexState::Empty;
         building_ = false;
