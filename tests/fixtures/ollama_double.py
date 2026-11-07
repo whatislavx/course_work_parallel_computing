@@ -16,7 +16,10 @@ DEFAULT_TAGS = json.dumps({"models": [{"name": "tinyllama:latest"}]})
 def make_handler(args, log_lock):
     class Handler(http.server.BaseHTTPRequestHandler):
         def _handle(self):
-            length = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+            except ValueError:
+                length = 0
             body = self.rfile.read(length).decode("utf-8", errors="replace") if length else ""
             if args.log:
                 entry = {"method": self.command, "path": self.path, "body": body}
@@ -54,7 +57,11 @@ def main():
     p.add_argument("--silent-seconds", type=float, default=60.0)
     p.add_argument("--log", default="", help="файл журналу запитів (JSON Lines)")
     args = p.parse_args()
-    if pathlib.Path(args.body).is_file():
+    try:
+        is_file = pathlib.Path(args.body).is_file()
+    except OSError:  # інлайн-JSON довший за ліміт імені файлу
+        is_file = False
+    if is_file:
         args.body = pathlib.Path(args.body).read_text(encoding="utf-8")
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args, threading.Lock()))

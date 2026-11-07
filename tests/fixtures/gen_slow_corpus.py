@@ -13,7 +13,7 @@ import random
 VOCAB = [
     "parallel", "mutex", "semaphore", "thread", "pool", "index", "query", "search",
     "document", "worker", "server", "cache", "token", "term", "rank", "queue",
-    "socket", "request", "response", "server", "build", "load", "store", "result",
+    "socket", "request", "response", "build", "load", "store", "result",
 ]
 
 
