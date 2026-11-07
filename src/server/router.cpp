@@ -35,8 +35,8 @@ Response json_response(bh::status status, std::string body) {
     return res;
 }
 
-Response health_response() {
-    boost::json::object body{{"status", "ok"}};
+Response health_response(bool ollama_available) {
+    boost::json::object body{{"status", "ok"}, {"ollama", ollama_available}};
     return json_response(bh::status::ok, boost::json::serialize(body));
 }
 
@@ -48,7 +48,11 @@ Response error_response(bh::status status, std::string_view code, std::string_vi
     return json_response(status, boost::json::serialize(body));
 }
 
-Response route(const Request &request) {
+bool is_health_request(const Request &request) {
+    return path_of(request.target()) == "/api/health" && request.method() == bh::verb::get;
+}
+
+Response route(const Request &request, bool ollama_available) {
     const std::string_view path = path_of(request.target());
 
     bool path_known = false;
@@ -66,7 +70,7 @@ Response route(const Request &request) {
             return error_response(bh::status::not_implemented, "not_implemented",
                                   "endpoint is not implemented yet");
         }
-        return health_response();
+        return health_response(ollama_available);
     }
 
     if (path_known) {

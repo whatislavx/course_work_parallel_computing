@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -33,6 +34,7 @@ class HttpServerTest : public ::testing::Test {
         options.port = 0;
         options.max_request_body_bytes = kLimit;
         options.request_timeout = std::chrono::seconds(5);
+        options.ollama_check = [this](std::function<void(bool)> done) { done(ollama_ok_.load()); };
         server_ = std::make_unique<HttpServer>(ioc_, options);
         server_->start();
         worker_ = std::thread([this] { ioc_.run(); });
@@ -65,6 +67,7 @@ class HttpServerTest : public ::testing::Test {
         return res;
     }
 
+    std::atomic<bool> ollama_ok_{true};
     net::io_context ioc_;
     std::unique_ptr<HttpServer> server_;
     std::thread worker_;
@@ -79,6 +82,16 @@ TEST_F(HttpServerTest, HealthReturnsValidJsonWithStringStatus) {
     const auto parsed = boost::json::parse(res.body());
     ASSERT_TRUE(parsed.is_object());
     EXPECT_EQ(parsed.as_object().at("status").as_string(), "ok");
+}
+
+TEST_F(HttpServerTest, HealthReportsOllamaAvailability) {
+    const auto up = boost::json::parse(request(http::verb::get, "/api/health").body());
+    EXPECT_TRUE(up.as_object().at("ollama").as_bool());
+
+    ollama_ok_ = false;
+    const auto down = boost::json::parse(request(http::verb::get, "/api/health").body());
+    EXPECT_FALSE(down.as_object().at("ollama").as_bool());
+    EXPECT_EQ(down.as_object().at("status").as_string(), "ok");
 }
 
 TEST_F(HttpServerTest, HealthWithQueryStringStillOk) {
