@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <stdexcept>
+
 #include <string>
 #include <vector>
 
@@ -88,4 +90,17 @@ TEST(InvertedIndex, ManyTermsRemainSearchable) {
     EXPECT_EQ(index.term_frequency("w1999", "other.txt"), 1U);
     EXPECT_EQ(index.term_frequency("w0", "other.txt"), 1U);
     EXPECT_EQ(index.term_count(), 2000U);
+}
+
+TEST(InvertedIndex, DocIdOutOfRangeThrows) {
+    InvertedIndex index;
+    index.add_document("a.txt", words({"x"}));
+    EXPECT_THROW(static_cast<void>(index.doc_id(1)), std::out_of_range);
+}
+
+TEST(InvertedIndex, EmptyStringIsAValidTermKey) {
+    InvertedIndex index;
+    index.add_document("a.txt", words({""}));
+    ASSERT_NE(index.postings(""), nullptr);
+    EXPECT_EQ(index.term_frequency("", "a.txt"), 1U);
 }
