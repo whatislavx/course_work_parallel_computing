@@ -72,3 +72,9 @@ TEST(Config, EmptyStringValueIsRejected) {
     EXPECT_THROW(parse_config(env_from({{"OLLAMA_URL", ""}})), ConfigError);
     EXPECT_THROW(parse_config(env_from({{"DATASET_DIR", ""}})), ConfigError);
 }
+
+TEST(Config, RequestTimeoutDefaultAndOverride) {
+    EXPECT_EQ(parse_config(env_from({})).request_timeout_ms, 10000U);
+    EXPECT_EQ(parse_config(env_from({{"REQUEST_TIMEOUT_MS", "500"}})).request_timeout_ms, 500U);
+    EXPECT_THROW(parse_config(env_from({{"REQUEST_TIMEOUT_MS", "0"}})), ConfigError);
+}

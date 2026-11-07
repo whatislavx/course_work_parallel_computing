@@ -26,6 +26,7 @@ struct Config {
     std::string dataset_dir;   // DATASET_DIR; порожньо = не задано (OQ-01)
     std::size_t default_index_threads = 0; // DEFAULT_INDEX_THREADS; 0 = логічні процесори (OQ-07)
     std::size_t max_request_body_bytes = 1 << 20; // MAX_REQUEST_BODY_BYTES; тимчасово 1 МіБ (OQ-27)
+    std::size_t request_timeout_ms = 10000;     // REQUEST_TIMEOUT_MS
     std::size_t health_check_timeout_ms = 2000; // HEALTH_CHECK_TIMEOUT_MS; тимчасово (OQ-14)
     std::string ollama_url = "http://ollama:11434"; // OLLAMA_URL
 };

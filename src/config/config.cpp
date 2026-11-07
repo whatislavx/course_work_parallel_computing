@@ -47,6 +47,9 @@ Config parse_config(const EnvLookup &lookup) {
         cfg.max_request_body_bytes =
             parse_integer<std::size_t>("MAX_REQUEST_BODY_BYTES", *v, 1, std::size_t{1} << 30);
     }
+    if (const auto v = lookup("REQUEST_TIMEOUT_MS")) {
+        cfg.request_timeout_ms = parse_integer<std::size_t>("REQUEST_TIMEOUT_MS", *v, 1, 3600000);
+    }
     if (const auto v = lookup("HEALTH_CHECK_TIMEOUT_MS")) {
         cfg.health_check_timeout_ms =
             parse_integer<std::size_t>("HEALTH_CHECK_TIMEOUT_MS", *v, 1, 3600000);
