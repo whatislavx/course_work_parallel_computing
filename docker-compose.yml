@@ -1,11 +1,55 @@
-# Partial configuration: the search server service is added once the backend is built (T-011).
+# Три сервіси (NFR-012): сервер пошуку, Ollama з автозавантаженням моделі, веб-контейнер (AD-07).
+# OLLAMA_MODEL — ПЛЕЙСХОЛДЕР до рішення OQ-13; значення за замовчуванням нижче тимчасове.
 services:
   ollama:
     image: ollama/ollama
-    ports:
-      - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  ollama-model:
+    image: ollama/ollama
+    entrypoint: ["/bin/sh", "/provision/ollama-provision.sh"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-tinyllama}  # ПЛЕЙСХОЛДЕР (OQ-13)
+    volumes:
+      - ./docker/ollama-provision.sh:/provision/ollama-provision.sh:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/server.Dockerfile
+    environment:
+      SERVER_PORT: "8080"
+      DATASET_DIR: /data/docs
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-tinyllama}  # ПЛЕЙСХОЛДЕР (OQ-13)
+    volumes:
+      - ${DATASET_HOST_DIR:-./dataset}:/data/docs:ro  # датасет: OQ-01, ще не затверджено
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-model:
+        condition: service_completed_successfully
+
+  web:
+    image: nginx:alpine
+    ports:
+      - "8081:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - server
 
 volumes:
   ollama-data:
