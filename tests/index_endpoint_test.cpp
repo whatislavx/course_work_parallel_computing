@@ -353,14 +353,32 @@ TEST_F(IndexEndpointTest, PostOnStatsReturnsMethodNotAllowed) {
 
 // Health відповідає під час побудови (NFR-010, BDD-HLT-03, TEST-API-13): побудова триває,
 // але /api/health не чекає на її завершення.
+// Health відповідає під час побудови (NFR-010, BDD-HLT-03). Тест перевіряє шар HTTP з
+// заглушкою побудови (stub builder), а не реальний IndexManager і пул: це не повний TEST-API-13
+// (той потребує датасету FIX-06).
 TEST_F(IndexEndpointTest, HealthRespondsWhileBuildIsRunning) {
     std::promise<void> release;
     std::shared_future<void> gate = release.get_future().share();
+    bool released = false;
     std::promise<void> started_promise;
     std::future<void> started = started_promise.get_future();
-    std::thread builder;
+    std::jthread builder;
+    std::jthread poster;
+    // Деструктори виконуються у зворотному порядку: спочатку звільнення, потім join потоків.
+    // Це не дає std::terminate навіть при збої ASSERT або винятку в запиті.
+    struct ReleaseOnExit {
+        std::promise<void> &promise;
+        bool &released;
+        ~ReleaseOnExit() {
+            if (!released) {
+                released = true;
+                promise.set_value();
+            }
+        }
+    } release_on_exit{release, released};
+
     start_server([&](std::size_t, BuildCallback done) {
-        builder = std::thread([gate, done = std::move(done)]() mutable {
+        builder = std::jthread([gate, done = std::move(done)]() mutable {
             gate.wait();
             BuildResult result;
             result.ok = true;
@@ -373,16 +391,28 @@ TEST_F(IndexEndpointTest, HealthRespondsWhileBuildIsRunning) {
     });
 
     // POST блокується до завершення побудови, тому надсилаємо його у фоновому потоці.
-    std::thread poster([this] { request(R"({"threads": 1})"); });
+    poster = std::jthread([this] {
+        try {
+            request(R"({"threads": 1})");
+        } catch (const std::exception &) {
+            // Відповідь POST тут не перевіряється; помилку зафіксує основний потік через health.
+        }
+    });
     ASSERT_EQ(started.wait_for(std::chrono::seconds(5)), std::future_status::ready);
 
     const auto begin = std::chrono::steady_clock::now();
-    const auto health = request("", http::verb::get, "/api/health");
+    bool health_received = false;
+    http::response<http::string_body> health;
+    try {
+        health = request("", http::verb::get, "/api/health");
+        health_received = true;
+    } catch (const std::exception &) {
+        health_received = false;
+    }
     const auto elapsed = std::chrono::steady_clock::now() - begin;
-    EXPECT_EQ(health.result(), http::status::ok);
+    EXPECT_TRUE(health_received);
+    if (health_received) {
+        EXPECT_EQ(health.result(), http::status::ok);
+    }
     EXPECT_LT(elapsed, std::chrono::seconds(2));
-
-    release.set_value();
-    builder.join();
-    poster.join();
 }

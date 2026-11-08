@@ -4,7 +4,7 @@
 
 ## Можливості
 
-- Паралельна побудова індексу з налюваною кількістю потоків (`POST /api/index`)
+- Паралельна побудова індексу з налаштовуваною кількістю потоків (`POST /api/index`)
 - Пошук за ключовими словами (`POST /api/search`) і статистика (`GET /api/stats`)
 - Розширення запиту через локальну модель Ollama
 - Потокова передача етапів пайплайну через WebSocket (`/ws/search`)
@@ -22,7 +22,8 @@
 ## Запуск через Docker Compose
 
 ```bash
-cp .env.example .env          # за потреби змініть параметри
+# Compose читає .env лише для підстановки ${OLLAMA_MODEL} і ${DATASET_HOST_DIR}.
+# Інші параметри з .env.example у контейнер сервера зараз не передаються (див. BL-27).
 docker compose up --build
 ```
 
@@ -78,6 +79,7 @@ SEARCH_SERVER_URL=http://localhost:8081 ./build/src/search "parallel index"
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+# Тести тягнуть GoogleTest з GitHub (потрібна мережа). Без тестів: -DSEARCH_BUILD_TESTS=OFF
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
@@ -88,11 +90,11 @@ ctest --test-dir build --output-on-failure
 node --test web/test/app.test.mjs
 ```
 
-Санітайзери: окремі збірки з `-fsanitize=thread` (TSan) і `-fsanitize=address,undefined` (ASan, UBSan). Бенчмарки будуються лише в Release; сценарії буде додано в `benchmarks/`.
+Санітайзери: окрема збірка з `-DSEARCH_SANITIZER=thread` (TSan), `address` або `undefined` (UBSan). Бенчмарки будуються лише в Release; сценарії буде додано в `benchmarks/`.
 
 ## Конфігурація
 
-Параметри читаються з змінних середовища; значення за замовчуванням і їх обмеження — у `src/config/config.hpp`. Приклад — у `.env.example`. Частина значень тимчасова до затвердження (позначено в коді). Секретів у репозиторії немає.
+Параметри читаються з змінних середовища; значення за замовчуванням і їх обмеження — у `src/config/config.hpp`. Приклад — у `.env.example`. Для запуску в Compose змінні з `.env.example`, крім `OLLAMA_MODEL` і `DATASET_HOST_DIR`, зараз не передаються в контейнер сервера (BL-27). Частина значень тимчасова до затвердження (позначено в коді). Секретів у репозиторії немає.
 
 ## Структура репозиторію
 
