@@ -1,0 +1,11 @@
+@startuml sequence-uc07
+title Пошук через CLI (UC-07)
+participant "Користувач CLI" as CLI
+participant "CLI search" as Cli
+participant "Пошуковий сервер" as Srv
+CLI -> Cli : ./search "запит"
+Cli -> Cli : розбір аргументів (E1: код 2)
+Cli -> Srv : UC-05: POST /api/search
+Srv --> Cli : 200 або помилка (E2: недоступний; E3: 4xx/5xx)
+Cli --> CLI : результати, код 0 (A1: без результатів, код 0)
+@enduml

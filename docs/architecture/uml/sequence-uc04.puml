@@ -1,0 +1,8 @@
+@startuml sequence-uc04
+title Статистика (UC-04)
+participant "Актор (оператор або API)" as ACT
+participant "Пошуковий сервер" as Srv
+ACT -> Srv : GET /api/stats
+Srv -> Srv : читання статистики останньої успішної побудови (нулі, якщо її не було)
+Srv --> ACT : 200 {documents, index_build_time_ms, threads_used}
+@enduml

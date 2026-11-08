@@ -1,0 +1,13 @@
+@startuml sequence-uc12
+title Зупинка системи (UC-12)
+participant "Оператор" as OPS
+participant "Docker Compose" as Compose
+participant "Пошуковий сервер" as Srv
+participant "Пули потоків" as Pool
+OPS -> Compose : docker compose down / stop
+Compose -> Srv : SIGTERM
+Srv -> Srv : припинити приймати нові з'єднання
+Srv --> Srv : закрити WS-сесії кодом 1001
+Srv -> Pool : перервати побудову без активації індексу; зупинити пули
+Srv --> Compose : код 0 у межах SHUTDOWN_TIMEOUT_MS (E1: SIGKILL)
+@enduml

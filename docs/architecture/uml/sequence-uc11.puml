@@ -1,0 +1,12 @@
+@startuml sequence-uc11
+title Throughput за кількістю клієнтів (UC-11)
+participant "Дослідник" as BEN
+participant "Скрипт навантаження" as Load
+participant "Пошуковий сервер" as Srv
+BEN -> Load : запуск навантаження
+Load -> Srv : GET /api/health; індекс має бути готовим (E1)
+Load -> Srv : для кожного K: прогрів, потім K паралельних клієнтів UC-05
+Srv --> Load : відповіді (A1: частка помилок фіксується)
+Load -> Load : throughput, частка помилок, медіана і p95
+Load --> BEN : таблиця і графік
+@enduml

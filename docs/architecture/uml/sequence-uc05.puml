@@ -1,0 +1,12 @@
+@startuml sequence-uc05
+title Пошук через REST (UC-05)
+participant "API-клієнт" as ACT
+participant "Пошуковий сервер" as Srv
+participant "Активний індекс" as Idx
+ACT -> Srv : POST /api/search {query, mode: keyword}
+Srv -> Srv : валідація (E1: 400)
+Srv -> Idx : пошук і ранжування (E2: 409 index_not_ready)
+Idx --> Srv : результати (A1: порожній список)
+Srv -> Srv : формування snippet
+Srv --> ACT : 200 {results, time_ms}
+@enduml

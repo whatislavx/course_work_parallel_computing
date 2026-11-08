@@ -1,0 +1,46 @@
+@startuml use-case
+left to right direction
+title Діаграма варіантів використання (DEL-03)
+actor "Оператор" as OPS
+actor "API-клієнт" as API
+actor "Користувач CLI" as CLI
+actor "Користувач Web UI" as USR
+actor "Дослідник" as BEN
+actor "Ollama" as OLL <<система>>
+actor "Файлова система" as FS <<система>>
+rectangle "Пошуковий сервіс" {
+  usecase "UC-01 Запустити систему" as UC01
+  usecase "UC-02 Перевірити стан" as UC02
+  usecase "UC-03 Побудувати індекс" as UC03
+  usecase "UC-04 Переглянути статистику" as UC04
+  usecase "UC-05 Шукати через REST" as UC05
+  usecase "UC-06 Шукати через WebSocket" as UC06
+  usecase "UC-07 Шукати через CLI" as UC07
+  usecase "UC-08 Шукати через Web UI" as UC08
+  usecase "UC-09 Розширити запит" as UC09
+  usecase "UC-10 Масштабованість побудови" as UC10
+  usecase "UC-11 Throughput" as UC11
+  usecase "UC-12 Зупинити систему" as UC12
+}
+OPS --> UC01
+OPS --> UC02
+OPS --> UC03
+OPS --> UC04
+OPS --> UC12
+API --> UC02
+API --> UC03
+API --> UC04
+API --> UC05
+API --> UC06
+CLI --> UC07
+USR --> UC08
+BEN --> UC10
+BEN --> UC11
+UC06 ..> UC09 : <<include>>
+UC07 ..> UC05 : <<include>>
+UC08 ..> UC06 : <<include>>
+UC10 ..> UC03 : <<include>>
+UC11 ..> UC05 : <<include>>
+UC09 --> OLL
+UC03 --> FS
+@enduml

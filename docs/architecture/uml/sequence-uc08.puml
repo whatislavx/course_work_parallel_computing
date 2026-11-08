@@ -1,0 +1,14 @@
+@startuml sequence-uc08
+title Пошук через Web UI (UC-08)
+participant "Користувач" as USR
+participant "Web UI (браузер)" as UI
+participant "nginx" as Proxy
+participant "Пошуковий сервер" as Srv
+USR -> UI : відкриває адресу (FR-034)
+USR -> UI : введення запиту (E1: порожній запит не надсилається)
+UI -> Proxy : WS /ws/search
+Proxy -> Srv : проксі WebSocket
+Srv --> UI : query_expansion: показати терміни
+Srv --> UI : keyword_search: показати результати
+Srv --> UI : done: пайплайн завершено (E2: error з data.message)
+@enduml

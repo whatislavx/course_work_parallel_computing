@@ -1,0 +1,10 @@
+@startuml sequence-uc02
+title Перевірка стану (UC-02)
+participant "Актор (оператор або API)" as ACT
+participant "Пошуковий сервер" as Srv
+participant "Ollama" as Ollama
+ACT -> Srv : GET /api/health
+Srv -> Ollama : перевірка доступності з тайм-аутом
+Ollama --> Srv : відповідь або тайм-аут (A1)
+Srv --> ACT : 200 {status: ok, ollama: true|false}
+@enduml

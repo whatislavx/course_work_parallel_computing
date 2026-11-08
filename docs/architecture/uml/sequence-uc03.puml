@@ -1,0 +1,17 @@
+@startuml sequence-uc03
+title Побудова індексу (UC-03)
+participant "Клієнт" as ACT
+participant "Пошуковий сервер" as Srv
+participant "Пул потоків" as Pool
+participant "Датасет" as FS
+ACT -> Srv : POST /api/index {threads}
+Srv -> Srv : валідація; стан «побудова триває»
+Srv --> ACT : 409 index_build_in_progress (E2)
+Srv -> FS : перелік документів (E3: 500 dataset_unavailable)
+Srv -> Pool : submit(задачі індексації) для p потоків
+Pool -> FS : читання документа (A2: пропуск із записом у лозі)
+Pool -> Pool : токенізація і вставка постингів у новий індекс
+Pool --> Srv : усі задачі завершено (E4: 500 index_build_failed)
+Srv -> Srv : атомарна активація індексу; оновлення статистики
+Srv --> ACT : 200 {status, documents_indexed, time_ms}
+@enduml

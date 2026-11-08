@@ -1,0 +1,81 @@
+@startuml class
+title Попередня класова діаграма (TCK-037): доменна модель з 07 і компоненти без деталей синхронізації
+class Document {
+  doc_id: string
+  path: string
+  text: string
+}
+class Term {
+  value: string
+}
+class Posting {
+  doc_id: string
+  term_frequency: int
+}
+class PostingList
+class InvertedIndex
+class IndexBuild {
+  threads: int
+  state: BuildState
+  documents_indexed: int
+  time_ms: int
+}
+class IndexStats {
+  documents: int
+  index_build_time_ms: int
+  threads_used: int
+}
+class SearchQuery {
+  query: string
+  mode: string
+}
+class ExpandedQuery {
+  expanded_terms: list
+}
+class SearchResult {
+  doc_id: string
+  score: double
+  snippet: string
+}
+class PipelineSession
+class StageEvent {
+  stage: string
+}
+class ThreadPool {
+  submit()
+  shutdown()
+}
+class IndexManager {
+  start_build()
+  snapshot()
+  state()
+}
+class SearchService
+class OllamaClient {
+  generate()
+}
+class HttpServer
+class WsSearchSession
+class CliClient
+Term "1" --> "*" Posting
+Term "1" --> "1" PostingList
+PostingList "1" o-- "*" Posting
+Posting "*" --> "1" Document
+InvertedIndex "1" *-- "*" Term
+InvertedIndex "1" *-- "*" Document
+IndexManager "1" --> "0..1" InvertedIndex : активний
+IndexManager "1" --> "*" IndexBuild
+IndexManager ..> IndexStats
+IndexBuild ..> ThreadPool : використовує
+SearchService ..> InvertedIndex : шукає в
+SearchService ..> ExpandedQuery
+SearchService ..> SearchResult
+SearchQuery ..> ExpandedQuery
+ExpandedQuery ..> OllamaClient
+PipelineSession "1" --> "*" StageEvent
+WsSearchSession --> PipelineSession
+WsSearchSession ..> SearchService
+HttpServer ..> IndexManager
+HttpServer ..> SearchService
+CliClient ..> HttpServer : HTTP
+@enduml

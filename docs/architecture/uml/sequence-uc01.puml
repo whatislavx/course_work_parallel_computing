@@ -1,0 +1,16 @@
+@startuml sequence-uc01
+title Запуск системи (UC-01)
+participant "Оператор" as OPS
+participant "Docker Compose" as Compose
+participant "Ollama" as Ollama
+participant "Пошуковий сервер" as Srv
+OPS -> Compose : docker compose up
+Compose -> Ollama : запуск сервісу Ollama
+Compose -> Srv : запуск після готовності Ollama
+Srv -> Srv : читання і валідація конфігурації
+Srv --> Compose : помилка конфігурації: код ≠ 0 (E1)
+Srv -> Srv : прийом HTTP і WebSocket
+Srv -> Ollama : завантаження моделі (A1: ollama=false до готовності)
+OPS -> Srv : GET /api/health
+Srv --> OPS : 200, ollama: true
+@enduml
