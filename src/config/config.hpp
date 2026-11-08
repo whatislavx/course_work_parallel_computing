@@ -32,6 +32,10 @@ struct Config {
         10000; // REQUEST_TIMEOUT_MS; тайм-аут читання/запису, тимчасово
     std::string ollama_url = "http://ollama:11434"; // OLLAMA_URL
     std::string ollama_model; // OLLAMA_MODEL; порожньо = лише доступність (OQ-13)
+    // Пошук (OQ-06): значення тимчасові, до затвердження.
+    std::size_t search_top_k = 10;       // SEARCH_TOP_K
+    std::size_t max_query_length = 256;  // MAX_QUERY_LENGTH, байти
+    std::size_t snippet_max_chars = 200; // SNIPPET_MAX_CHARS, байти (OQ-05)
 };
 
 // Розбирає і валідує конфігурацію з довільного джерела (для тестів і для оточення).

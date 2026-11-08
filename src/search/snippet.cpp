@@ -69,6 +69,10 @@ std::string make_snippet(std::string_view text, const std::vector<std::string> &
                 fragment = fragment.substr(0, cut);
             }
         }
+        // Хвостові пробіли (наприклад, перенос рядка в кінці файлу) не належать фрагменту.
+        const std::size_t last = fragment.find_last_not_of(" \t\n\r\v\f");
+        fragment =
+            last == std::string_view::npos ? std::string_view{} : fragment.substr(0, last + 1);
         return std::string(fragment);
     }
     return {};

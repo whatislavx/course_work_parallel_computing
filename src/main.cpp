@@ -1,6 +1,7 @@
 #include "config/config.hpp"
 #include "index/index_manager.hpp"
 #include "ollama/probe.hpp"
+#include "query/search_service.hpp"
 #include "server/http_server.hpp"
 
 #include <boost/asio/io_context.hpp>
@@ -12,6 +13,8 @@
 #include <exception>
 #include <functional>
 #include <iostream>
+#include <memory>
+#include <string_view>
 #include <thread>
 
 int main() {
@@ -28,6 +31,7 @@ int main() {
         // Менеджер оголошено після ioc: він знищується першим і приєднує потік побудови,
         // доки io_context ще живий для відкладених відповідей.
         search::index::IndexManager index_manager;
+        std::unique_ptr<search::query::SearchService> search_service;
 
         search::server::ServerOptions options;
         options.port = cfg.port;
@@ -50,6 +54,15 @@ int main() {
         };
 
         options.stats_provider = [&index_manager] { return index_manager.stats(); };
+
+        // EP-03: пошук за OR-семантикою і TF-IDF; тексти для snippet — з DATASET_DIR (BL-02).
+        search_service = std::make_unique<search::query::SearchService>(
+            [&index_manager] { return index_manager.snapshot(); }, cfg.dataset_dir,
+            search::query::SearchOptions{cfg.search_top_k, cfg.snippet_max_chars});
+        options.search_handler = [&search_service](std::string_view text) {
+            return search_service->search(text);
+        };
+        options.max_query_length = cfg.max_query_length;
 
         search::server::HttpServer server(ioc, options);
         server.start();

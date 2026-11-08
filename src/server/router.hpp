@@ -1,12 +1,16 @@
 #pragma once
 
 #include "index/index_manager.hpp"
+#include "query/search_service.hpp"
 
 #include <boost/beast/http.hpp>
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace search::server {
 
@@ -22,6 +26,22 @@ bool is_health_request(const Request &request);
 
 // Чи є запит POST /api/index (його тіло читає сесія, а відповідь відкладається до кінця побудови).
 bool is_index_request(const Request &request);
+
+// Тіло EP-03 після розбору.
+struct SearchRequest {
+    std::string query; // обрізано пробіли, довжина ≥ 1 і ≤ max_query_length байт
+};
+
+// Розбирає тіло EP-03 або повертає готову відповідь 400 (invalid_json, invalid_query,
+// invalid_mode, unsupported_mode). Режим "expanded" поки не реалізовано (LLM, окремий тікет).
+std::variant<SearchRequest, Response> parse_search_body(std::string_view body,
+                                                        std::size_t max_query_length);
+
+// Чи є запит POST /api/search (обробляє сесія: тіло, пошук, відповідь).
+bool is_search_request(const Request &request);
+
+// Відповідь EP-03 з результатами пошуку та часом виконання (06 EP-03).
+Response search_response(const std::vector<query::SearchHit> &hits, std::uint64_t time_ms);
 
 // Розбирає тіло EP-02. Повертає кількість потоків або готову відповідь 400.
 // Порожнє тіло чи відсутнє поле threads → default_threads.

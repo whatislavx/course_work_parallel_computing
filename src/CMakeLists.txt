@@ -17,6 +17,7 @@ add_library(search_core STATIC
     server/router.cpp
     search/ranking.cpp
     search/snippet.cpp
+    query/search_service.cpp
     ollama/endpoint.cpp
     ollama/probe.cpp
 )
