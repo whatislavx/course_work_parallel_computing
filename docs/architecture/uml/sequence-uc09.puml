@@ -1,10 +1,18 @@
 @startuml sequence-uc09
-title Розширення запиту (UC-09, include)
+title Розширення запиту через Ollama (UC-09)
 participant "Пошуковий сервер" as Srv
 participant "Ollama" as Ollama
 Srv -> Srv : формування промпту
 Srv -> Ollama : POST /api/generate з тайм-аутом
-Ollama --> Srv : текст відповіді
-Srv -> Srv : виділення, нормалізація, видалення дублікатів, обмеження
-Srv -> Srv : A1: збій, тайм-аут або порожній результат → expanded_terms=[]
+alt відповідь отримана вчасно
+  Ollama --> Srv : текст відповіді
+  Srv -> Srv : виділення, нормалізація, видалення дублікатів, обмеження
+  alt після обробки залишились терміни
+    Srv -> Srv : expanded_terms = терміни
+  else порожній результат (A1)
+    Srv -> Srv : expanded_terms = []
+  end
+else збій або тайм-аут (A1)
+  Srv -> Srv : expanded_terms = []
+end
 @enduml

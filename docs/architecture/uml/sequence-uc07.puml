@@ -1,11 +1,26 @@
 @startuml sequence-uc07
-title Пошук через CLI (UC-07)
+title CLI-пошук (UC-07)
 participant "Користувач CLI" as USER
 participant "CLI search" as CliApp
 participant "Пошуковий сервер" as Srv
 USER -> CliApp : ./search "запит"
-CliApp -> CliApp : розбір аргументів (E1: код 2)
-CliApp -> Srv : UC-05: POST /api/search
-Srv --> CliApp : 200 або помилка (E2: недоступний; E3: 4xx/5xx)
-CliApp --> USER : результати, код 0 (A1: без результатів, код 0)
+CliApp -> CliApp : розбір аргументів
+alt аргументи некоректні (E1)
+  CliApp --> USER : повідомлення про помилку, код 2
+else аргументи коректні
+  CliApp -> Srv : UC-05: POST /api/search
+  alt сервер недоступний (E2)
+    CliApp --> USER : помилка з'єднання, код ≠ 0
+  else відповідь отримана
+    alt помилка 4xx/5xx (E3)
+      CliApp --> USER : повідомлення про помилку сервера, код ≠ 0
+    else 200
+      alt без результатів (A1)
+        CliApp --> USER : повідомлення «без результатів», код 0
+      else є результати
+        CliApp --> USER : результати, код 0
+      end
+    end
+  end
+end
 @enduml

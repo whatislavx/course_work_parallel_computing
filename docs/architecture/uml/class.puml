@@ -1,5 +1,6 @@
 @startuml class
-title Попередня класова діаграма (TCK-037): доменна модель з 07 і компоненти без деталей синхронізації
+title Класова діаграма (синхронізовано з 07-domain-model §1)
+
 class Document {
   doc_id: string
   path: string
@@ -12,13 +13,22 @@ class Posting {
   doc_id: string
   term_frequency: int
 }
-class PostingList
-class InvertedIndex
+class PostingList {
+  term: Term
+  postings: Posting[*]
+}
+class InvertedIndex {
+  document_count: int
+  term_count: int
+  lookup(term) PostingList
+}
 class IndexBuild {
   threads: int
   state: BuildState
   documents_indexed: int
   time_ms: int
+  started_at
+  finished_at
 }
 class IndexStats {
   documents: int
@@ -28,54 +38,72 @@ class IndexStats {
 class SearchQuery {
   query: string
   mode: string
+  terms: Term[*]
 }
 class ExpandedQuery {
-  expanded_terms: list
+  original: string
+  expanded_terms: string[*]
 }
 class SearchResult {
   doc_id: string
-  score: double
+  score: number
   snippet: string
 }
-class PipelineSession
+class SearchResponse {
+  results: SearchResult[*]
+  time_ms: int
+}
+class PipelineSession {
+  state: SessionState
+}
 class StageEvent {
   stage: string
+  data: object
 }
-class ThreadPool {
+
+class ThreadPool <<компонент>> {
   submit()
   shutdown()
 }
-class IndexManager {
+class IndexManager <<компонент>> {
   start_build()
   snapshot()
   state()
 }
-class SearchService
-class OllamaClient {
+class SearchService <<компонент>> {
+  search()
+}
+class OllamaClient <<компонент>> {
   generate()
 }
-class HttpServer
-class WsSearchSession
-class CliClient
-Term "1" --> "*" Posting
-Term "1" --> "1" PostingList
-PostingList "1" o-- "*" Posting
+class HttpServer <<компонент>>
+class WsSearchSession <<компонент>>
+class CliClient <<компонент>>
+
+InvertedIndex "1" o-- "*" PostingList
+PostingList "1" *-- "*" Posting
 Posting "*" --> "1" Document
-InvertedIndex "1" *-- "*" Term
-InvertedIndex "1" *-- "*" Document
+PostingList "*" --> "1" Term
+SearchQuery "1" --> "*" Term
+ExpandedQuery ..> SearchQuery : доповнює
+SearchResponse "1" *-- "*" SearchResult
+PipelineSession "1" --> "*" StageEvent : надсилає
+
+IndexBuild "1" --> "0..1" InvertedIndex : створює
+IndexStats ..> IndexBuild : відображає останню успішну
 IndexManager "1" --> "0..1" InvertedIndex : активний
-IndexManager "1" --> "*" IndexBuild
-IndexManager ..> IndexStats
+IndexManager ..> IndexBuild : керує
 IndexBuild ..> ThreadPool : використовує
-SearchService ..> InvertedIndex : шукає в
+
+SearchService ..> InvertedIndex : шукає в активному
 SearchService ..> ExpandedQuery
-SearchService ..> SearchResult
-SearchQuery ..> ExpandedQuery
-ExpandedQuery ..> OllamaClient
-PipelineSession "1" --> "*" StageEvent
-WsSearchSession --> PipelineSession
+SearchService ..> SearchResponse : формує
+
+WsSearchSession "1" --> "1" PipelineSession
 WsSearchSession ..> SearchService
+WsSearchSession ..> OllamaClient : розширення через ExpansionHandler
 HttpServer ..> IndexManager
 HttpServer ..> SearchService
+HttpServer ..> OllamaClient : перевірка доступності
 CliClient ..> HttpServer : HTTP
 @enduml

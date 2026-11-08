@@ -1,12 +1,23 @@
 @startuml sequence-uc05
-title Пошук через REST (UC-05)
+title Пошук за ключовими словами (UC-05)
 participant "API-клієнт" as ACT
 participant "Пошуковий сервер" as Srv
 participant "Активний індекс" as Idx
 ACT -> Srv : POST /api/search {query, mode: keyword}
-Srv -> Srv : валідація (E1: 400)
-Srv -> Idx : пошук і ранжування (E2: 409 index_not_ready)
-Idx --> Srv : результати (A1: порожній список)
-Srv -> Srv : формування snippet
-Srv --> ACT : 200 {results, time_ms}
+Srv -> Srv : валідація запиту
+alt запит некоректний (E1)
+  Srv --> ACT : 400 invalid_query або invalid_mode
+else запит коректний
+  alt індекс не готовий (E2)
+    Srv --> ACT : 409 index_not_ready
+  else індекс готовий
+    Srv -> Idx : пошук і ранжування
+    Idx --> Srv : результати
+    opt результатів немає (A1)
+      note right: повертається порожній список results
+    end
+    Srv -> Srv : формування snippet
+    Srv --> ACT : 200 {results, time_ms}
+  end
+end
 @enduml
