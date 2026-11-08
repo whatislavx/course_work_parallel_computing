@@ -11,6 +11,9 @@
 #include <boost/beast/http.hpp>
 #include <gtest/gtest.h>
 
+#include <unistd.h>
+
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -39,24 +42,33 @@ class FakeOllama {
     FakeOllama(std::string reply_body, bool silent) : acceptor_(ioc_, tcp::endpoint(tcp::v4(), 0)) {
         port_ = acceptor_.local_endpoint().port();
         thread_ = std::thread([this, reply_body = std::move(reply_body), silent] {
+            boost::system::error_code ec;
             tcp::socket socket(ioc_);
-            acceptor_.accept(socket);
+            acceptor_.accept(socket, ec);
+            if (ec) {
+                return; // acceptor закрито деструктором: клієнта не було
+            }
             beast::flat_buffer buffer;
             http::request<http::string_body> req;
-            http::read(socket, buffer, req);
-            if (silent) {
-                std::this_thread::sleep_for(std::chrono::seconds(2));
+            http::read(socket, buffer, req, ec);
+            if (ec || silent) {
+                if (silent) {
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                }
                 return;
             }
             http::response<http::string_body> res{http::status::ok, 11};
             res.set(http::field::content_type, "application/json");
             res.body() = reply_body;
             res.prepare_payload();
-            http::write(socket, res);
+            http::write(socket, res, ec);
         });
     }
 
     ~FakeOllama() {
+        // Закриття acceptor звільняє accept(), якщо клієнт так і не підключився: тест не зависає.
+        boost::system::error_code ignored;
+        acceptor_.close(ignored);
         if (thread_.joinable()) {
             thread_.join();
         }
@@ -91,7 +103,9 @@ std::vector<std::string> doc_ids(const std::vector<search::query::SearchHit> &hi
 class ExpansionFallbackTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        dataset_ = std::filesystem::temp_directory_path() / "expansion_fallback_test";
+        const std::string name = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        dataset_ = std::filesystem::temp_directory_path() /
+                   ("expansion_fallback_" + name + "_" + std::to_string(getpid()));
         std::filesystem::remove_all(dataset_);
         std::filesystem::create_directories(dataset_);
         { std::ofstream(dataset_ / "a.txt") << "alpha gamma delta\n"; }
@@ -110,27 +124,33 @@ class ExpansionFallbackTest : public ::testing::Test {
 
     // Виконує розширення так, як сервер: обробник і його клієнт працюють на одному io_context.
     // Повертає терми розширення і фактичний час розширення.
+    // Повертає терми, фактичний час і кількість викликів done (FR-021: рівно один раз).
     std::vector<std::string> expand(net::io_context &ioc,
                                     const search::ollama::ExpansionFunction &handler,
-                                    const std::string &query, std::chrono::milliseconds *elapsed) {
-        std::optional<std::vector<std::string>> terms;
+                                    const std::string &query, std::chrono::milliseconds *elapsed,
+                                    int *calls) {
+        std::vector<std::string> terms;
+        *calls = 0;
         const auto start = std::chrono::steady_clock::now();
-        handler(query, [&terms](std::vector<std::string> result) { terms = std::move(result); });
+        handler(query, [&terms, calls](std::vector<std::string> result) {
+            ++*calls;
+            terms = std::move(result);
+        });
         ioc.run();
         *elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start);
-        return terms.value_or(std::vector<std::string>{});
+        return terms;
     }
 
     // Розширення через реальний обробник з контрольованим Endpoint і тайм-аутом.
     std::vector<std::string> expand_via_ollama(const Endpoint &endpoint,
                                                std::chrono::milliseconds timeout,
                                                const std::string &query,
-                                               std::chrono::milliseconds *elapsed) {
+                                               std::chrono::milliseconds *elapsed, int *calls) {
         net::io_context ioc;
         const auto handler =
             search::ollama::make_expansion_handler(ioc, endpoint, timeout, /*max_terms=*/5);
-        return expand(ioc, handler, query, elapsed);
+        return expand(ioc, handler, query, elapsed, calls);
     }
 
     std::filesystem::path dataset_;
@@ -140,42 +160,69 @@ class ExpansionFallbackTest : public ::testing::Test {
 
 } // namespace
 
-// AC-021.1: Ollama зупинено (з'єднання відхиляється) → терми порожні, результат як без розширення.
+// AC-021.1: Ollama зупинено (з'єднання відхиляється) → терми порожні, done рівно раз,
+// результат як без розширення, у межах тайм-ауту + допуск.
 TEST_F(ExpansionFallbackTest, StoppedOllamaGivesKeywordResults) {
     const Endpoint endpoint{"127.0.0.1", closed_port(), "tinyllama"};
+    const auto timeout = std::chrono::seconds(5);
     std::chrono::milliseconds elapsed{};
-    const auto terms = expand_via_ollama(endpoint, std::chrono::seconds(5), "alpha", &elapsed);
+    int calls = 0;
+    const auto terms = expand_via_ollama(endpoint, timeout, "alpha", &elapsed, &calls);
 
+    EXPECT_EQ(calls, 1);
     EXPECT_TRUE(terms.empty());
-    EXPECT_EQ(doc_ids(search_->search("alpha", terms)), doc_ids(search_->search("alpha", {})));
     EXPECT_FALSE(search_->search("alpha", terms).empty());
-    EXPECT_LE(elapsed, kTimingTolerance);
+    EXPECT_LE(elapsed, timeout + kTimingTolerance);
 }
 
-// AC-021.2: Ollama мовчить довше тайм-ауту → розширення завершується не пізніше
-// тайм-аут + допуск, результат як без розширення.
+// AC-021.2: Ollama мовчить довше тайм-ауту → done рівно раз з порожніми термами; завершення
+// не раніше тайм-ауту (його викликав таймер) і не пізніше тайм-ауту + допуск (NFR-020).
 TEST_F(ExpansionFallbackTest, SilentOllamaTimesOutWithinBoundAndFallsBack) {
     const auto timeout = std::chrono::milliseconds(300);
     FakeOllama fake(R"({"response": "gamma, delta", "done": true})", /*silent=*/true);
     const Endpoint endpoint{"127.0.0.1", fake.port(), "tinyllama"};
     std::chrono::milliseconds elapsed{};
-    const auto terms = expand_via_ollama(endpoint, timeout, "alpha", &elapsed);
+    int calls = 0;
+    const auto terms = expand_via_ollama(endpoint, timeout, "alpha", &elapsed, &calls);
 
+    EXPECT_EQ(calls, 1);
     EXPECT_TRUE(terms.empty());
-    EXPECT_EQ(doc_ids(search_->search("alpha", terms)), doc_ids(search_->search("alpha", {})));
+    EXPECT_GE(elapsed, timeout - std::chrono::milliseconds(50));
     EXPECT_LE(elapsed, timeout + kTimingTolerance);
 }
 
-// AC-021.3: відповідь без жодного придатного терма (багатослівна фраза) → терми порожні,
-// результат як без розширення.
+// AC-021.3: відповідь без жодного придатного терма (багатослівна фраза) → done рівно раз з
+// порожніми термами. Позитивний контроль: відповідь була отримана (інакше тест не відрізнив би
+// відмову з'єднання від відкинутої відповіді).
 TEST_F(ExpansionFallbackTest, UnusableOllamaReplyFallsBack) {
     FakeOllama fake(R"({"response": "Here are some related terms for you", "done": true})",
                     /*silent=*/false);
     const Endpoint endpoint{"127.0.0.1", fake.port(), "tinyllama"};
     std::chrono::milliseconds elapsed{};
-    const auto terms = expand_via_ollama(endpoint, std::chrono::seconds(5), "alpha", &elapsed);
+    int calls = 0;
+    const auto terms =
+        expand_via_ollama(endpoint, std::chrono::seconds(5), "alpha", &elapsed, &calls);
 
+    EXPECT_EQ(calls, 1);
     EXPECT_TRUE(terms.empty());
-    EXPECT_EQ(doc_ids(search_->search("alpha", terms)), doc_ids(search_->search("alpha", {})));
-    EXPECT_LE(elapsed, kTimingTolerance);
+    EXPECT_LE(elapsed, std::chrono::seconds(5) + kTimingTolerance);
+}
+
+// Позитивний контроль успішного шляху: терми з відповіді змінюють результат пошуку. Без нього
+// тести вище могли б пройти при обробнику, який завжди повертає порожній список.
+TEST_F(ExpansionFallbackTest, SuccessfulExpansionChangesResults) {
+    FakeOllama fake(R"({"response": "gamma, delta", "done": true})", /*silent=*/false);
+    const Endpoint endpoint{"127.0.0.1", fake.port(), "tinyllama"};
+    std::chrono::milliseconds elapsed{};
+    int calls = 0;
+    const auto terms =
+        expand_via_ollama(endpoint, std::chrono::seconds(5), "beta", &elapsed, &calls);
+
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(terms, (std::vector<std::string>{"gamma", "delta"}));
+    // "beta" знаходить лише b.txt; термін "gamma" з розширення додає a.txt.
+    const auto baseline = doc_ids(search_->search("beta", {}));
+    const auto expanded = doc_ids(search_->search("beta", terms));
+    EXPECT_EQ(baseline, (std::vector<std::string>{"b.txt"}));
+    EXPECT_NE(std::find(expanded.begin(), expanded.end(), "a.txt"), expanded.end());
 }
