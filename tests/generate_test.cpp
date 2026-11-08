@@ -94,6 +94,28 @@ TEST(ExpansionTerms, EmptyModelTextGivesNoTerms) {
     EXPECT_TRUE(parse_expansion_terms("", {"alpha"}, 5).empty());
 }
 
+TEST(ExpansionTerms, PreambleIsNotTakenAsTerms) {
+    const auto terms = parse_expansion_terms(
+        "Sure! Here are some related keywords: gamma, delta, epsilon", {"alpha"}, 5);
+    EXPECT_EQ(terms, (std::vector<std::string>{"gamma", "delta", "epsilon"}));
+}
+
+TEST(ExpansionTerms, NumberedListYieldsWordsNotNumbers) {
+    const auto terms = parse_expansion_terms("1. gamma\n2. delta\n3) epsilon", {"alpha"}, 5);
+    EXPECT_EQ(terms, (std::vector<std::string>{"gamma", "delta", "epsilon"}));
+}
+
+TEST(ExpansionTerms, MultiWordFragmentsAreDropped) {
+    const auto terms = parse_expansion_terms("machine learning, gamma, deep neural, delta", {}, 5);
+    EXPECT_EQ(terms, (std::vector<std::string>{"gamma", "delta"}));
+}
+
+TEST(ExpansionTerms, PreambleDoesNotConsumeTermSlots) {
+    const auto terms = parse_expansion_terms(
+        "Here are the keywords:\ngamma\ndelta\nepsilon\nzeta", {"alpha"}, 2);
+    EXPECT_EQ(terms, (std::vector<std::string>{"gamma", "delta"}));
+}
+
 TEST(ExpansionClient, SuccessReturnsResponseText) {
     FakeOllama fake(R"({"response": "gamma, delta", "done": true})");
     net::io_context ioc;
