@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Пошук</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }
+    form { display: flex; gap: .5rem; }
+    input[type=text] { flex: 1; padding: .5rem; font-size: 1rem; }
+    button { padding: .5rem 1rem; font-size: 1rem; }
+    #hint, #status { min-height: 1.25rem; color: #555; margin: .5rem 0; }
+    #status.error { color: #b00020; }
+    #results { list-style: none; padding: 0; }
+    #results li { margin: .75rem 0; }
+    .doc-id { font-weight: 600; }
+    .score { color: #555; font-size: .9rem; }
+    .snippet { margin: .25rem 0 0; }
+  </style>
+</head>
+<body>
+  <h1>Пошук</h1>
+  <form id="search-form" novalidate>
+    <input type="text" id="query" name="query" placeholder="Введіть запит" autocomplete="off" aria-label="Запит">
+    <button type="submit" id="search-button">Шукати</button>
+  </form>
+  <p id="hint" role="status"></p>
+  <p id="status" role="status"></p>
+  <ol id="results"></ol>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
