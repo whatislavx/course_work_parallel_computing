@@ -45,6 +45,12 @@ Config parse_config(const EnvLookup &lookup) {
         cfg.default_index_threads =
             parse_integer<std::size_t>("DEFAULT_INDEX_THREADS", *v, 0, 1024);
     }
+    if (const auto v = lookup("MAX_INDEX_THREADS")) {
+        cfg.max_index_threads = parse_integer<std::size_t>("MAX_INDEX_THREADS", *v, 1, 1024);
+    }
+    if (cfg.default_index_threads > cfg.max_index_threads) {
+        throw ConfigError("DEFAULT_INDEX_THREADS: перевищує MAX_INDEX_THREADS");
+    }
     if (const auto v = lookup("MAX_REQUEST_BODY_BYTES")) {
         cfg.max_request_body_bytes =
             parse_integer<std::size_t>("MAX_REQUEST_BODY_BYTES", *v, 1, std::size_t{1} << 30);

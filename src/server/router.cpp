@@ -3,6 +3,7 @@
 #include <boost/json.hpp>
 
 #include <string>
+#include <variant>
 
 namespace search::server {
 namespace {
@@ -20,7 +21,7 @@ struct Route {
 // Ендпоінти 06 §1. implemented=false → 501, доки не реалізовано відповідний тікет.
 constexpr Route kRoutes[] = {
     {"/api/health", bh::verb::get, true},
-    {"/api/index", bh::verb::post, false},
+    {"/api/index", bh::verb::post, true},
     {"/api/search", bh::verb::post, false},
     {"/api/stats", bh::verb::get, false},
 };
@@ -52,6 +53,48 @@ bool is_health_request(const Request &request) {
     return path_of(request.target()) == "/api/health" && request.method() == bh::verb::get;
 }
 
+bool is_index_request(const Request &request) {
+    return path_of(request.target()) == "/api/index" && request.method() == bh::verb::post;
+}
+
+std::variant<std::size_t, Response>
+parse_index_body(std::string_view body, std::size_t default_threads, std::size_t max_threads) {
+    if (body.find_first_not_of(" \t\r\n") == std::string_view::npos) {
+        return default_threads;
+    }
+    boost::system::error_code ec;
+    boost::json::value parsed = boost::json::parse(body, ec);
+    if (ec || !parsed.is_object()) {
+        return error_response(bh::status::bad_request, "invalid_json",
+                              "request body must be a JSON object");
+    }
+    const boost::json::object &object = parsed.as_object();
+    const auto field = object.find("threads");
+    if (field == object.end()) {
+        return default_threads;
+    }
+    const boost::json::value &value = field->value();
+    // Тип integer; дробові числа, рядки й вихід за межі — invalid_threads.
+    if (value.is_int64()) {
+        const std::int64_t requested = value.as_int64();
+        if (requested < 1 || static_cast<std::uint64_t>(requested) > max_threads) {
+            return error_response(bh::status::bad_request, "invalid_threads",
+                                  "threads must be an integer from 1 to MAX_INDEX_THREADS");
+        }
+        return static_cast<std::size_t>(requested);
+    }
+    if (value.is_uint64()) {
+        const std::uint64_t requested = value.as_uint64();
+        if (requested > max_threads) {
+            return error_response(bh::status::bad_request, "invalid_threads",
+                                  "threads must be an integer from 1 to MAX_INDEX_THREADS");
+        }
+        return static_cast<std::size_t>(requested);
+    }
+    return error_response(bh::status::bad_request, "invalid_threads",
+                          "threads must be an integer from 1 to MAX_INDEX_THREADS");
+}
+
 Response route(const Request &request, bool ollama_available) {
     const std::string_view path = path_of(request.target());
 
@@ -69,6 +112,11 @@ Response route(const Request &request, bool ollama_available) {
         if (!r.implemented) {
             return error_response(bh::status::not_implemented, "not_implemented",
                                   "endpoint is not implemented yet");
+        }
+        if (path == "/api/index") {
+            // Сесія обробляє EP-02 до маршрутизації; сюди запит не доходить.
+            return error_response(bh::status::internal_server_error, "internal_error",
+                                  "index request routed incorrectly");
         }
         return health_response(ollama_available);
     }

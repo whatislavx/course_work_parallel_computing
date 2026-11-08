@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -27,12 +28,23 @@ struct IndexStats {
     std::size_t threads_used = 0;
 };
 
+// Результат завершеної побудови, що передається в callback.
+// error_code — код з 06 §2.4: "dataset_unavailable", "index_build_failed" або "internal_error".
+struct BuildResult {
+    bool ok = false;
+    std::string error_code;
+    std::string error_message;
+    IndexStats stats;
+};
+
+// Викликається з потоку побудови після оновлення стану (без утримання замка).
+using BuildCallback = std::function<void(const BuildResult &)>;
+
 // Керує побудовою і заміною індексу. Побудова виконується у власному потоці менеджера,
 // який приєднується в деструкторі або в wait_for_build (без відокремлених потоків).
 //
-// Потокова безпека: усі методи можна викликати з будь-якого потоку, крім того, що
-// start_build і wait_for_build мають викликатися з одного потоку (керування потоком побудови).
-// Guarded by mutex_: state_, active_, stats_, last_error_, building_.
+// Потокова безпека: усі методи можна викликати з будь-якого потоку. Guarded by mutex_:
+// state_, active_, stats_, last_error_, building_, builder_.
 class IndexManager {
   public:
     IndexManager() = default;
@@ -42,9 +54,11 @@ class IndexManager {
     IndexManager &operator=(const IndexManager &) = delete;
 
     // Запускає побудову з каталогу dataset_dir і threads потоками. Повертає false, якщо
-    // побудова вже триває (відповідає 409 index_build_in_progress). Кидає std::invalid_argument
-    // при threads == 0.
-    bool start_build(std::filesystem::path dataset_dir, std::size_t threads);
+    // побудова вже триває (409 index_build_in_progress); тоді on_done не викликається.
+    // Кидає std::invalid_argument при threads == 0. on_done (за наявності) викликається рівно
+    // один раз після завершення, з потоку побудови.
+    bool start_build(std::filesystem::path dataset_dir, std::size_t threads,
+                     BuildCallback on_done = {});
 
     // Блокується до завершення поточної побудови (якщо вона є).
     void wait_for_build();
@@ -62,7 +76,8 @@ class IndexManager {
     std::optional<std::string> last_error() const;
 
   private:
-    void run_build(std::filesystem::path dataset_dir, std::size_t threads);
+    void run_build(std::filesystem::path dataset_dir, std::size_t threads, BuildCallback on_done);
+    void finish_build(const BuildResult &result);
     void wait_for_build_thread();
 
     mutable std::mutex mutex_;
