@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -348,4 +349,40 @@ TEST_F(IndexEndpointTest, PostOnStatsReturnsMethodNotAllowed) {
     const auto res = request("", http::verb::post, "/api/stats");
     EXPECT_EQ(res.result(), http::status::method_not_allowed);
     EXPECT_EQ(res[http::field::allow], "GET");
+}
+
+// Health відповідає під час побудови (NFR-010, BDD-HLT-03, TEST-API-13): побудова триває,
+// але /api/health не чекає на її завершення.
+TEST_F(IndexEndpointTest, HealthRespondsWhileBuildIsRunning) {
+    std::promise<void> release;
+    std::shared_future<void> gate = release.get_future().share();
+    std::promise<void> started_promise;
+    std::future<void> started = started_promise.get_future();
+    std::thread builder;
+    start_server([&](std::size_t, BuildCallback done) {
+        builder = std::thread([gate, done = std::move(done)]() mutable {
+            gate.wait();
+            BuildResult result;
+            result.ok = true;
+            result.stats.documents = 1;
+            result.stats.threads_used = 1;
+            done(result);
+        });
+        started_promise.set_value();
+        return true;
+    });
+
+    // POST блокується до завершення побудови, тому надсилаємо його у фоновому потоці.
+    std::thread poster([this] { request(R"({"threads": 1})"); });
+    ASSERT_EQ(started.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+
+    const auto begin = std::chrono::steady_clock::now();
+    const auto health = request("", http::verb::get, "/api/health");
+    const auto elapsed = std::chrono::steady_clock::now() - begin;
+    EXPECT_EQ(health.result(), http::status::ok);
+    EXPECT_LT(elapsed, std::chrono::seconds(2));
+
+    release.set_value();
+    builder.join();
+    poster.join();
 }
