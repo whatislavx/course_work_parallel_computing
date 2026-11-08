@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -86,12 +87,13 @@ class WsSearchTest : public ::testing::Test {
         options.expansion_handler = [this](std::string,
                                            std::function<void(std::vector<std::string>)> done) {
             ++expansion_calls_;
-            if (expansion_delay_.count() == 0) {
+            const auto delay = std::chrono::milliseconds(expansion_delay_ms_.load());
+            if (delay.count() == 0) {
                 done(expansion_terms_);
                 return;
             }
             // Затримка Ollama (BDD-WS-06, BDD-WS-08): таймер на io_context сервера.
-            auto timer = std::make_shared<net::steady_timer>(ioc_, expansion_delay_);
+            auto timer = std::make_shared<net::steady_timer>(ioc_, delay);
             timer->async_wait(
                 [timer, terms = expansion_terms_, done](beast::error_code) { done(terms); });
         };
@@ -144,7 +146,7 @@ class WsSearchTest : public ::testing::Test {
     }
 
     std::vector<std::string> expansion_terms_;
-    std::chrono::milliseconds expansion_delay_{0};
+    std::atomic<std::int64_t> expansion_delay_ms_{0}; // з потоку тесту і з io-потоку
     std::atomic<int> expansion_calls_{0};
     std::filesystem::path dataset_;
     search::index::IndexManager manager_;
@@ -286,7 +288,7 @@ TEST_F(WsSearchTest, InvalidClientMessagesReturnErrorCodesAndKeepConnection) {
 // BDD-WS-08 / FR-027: повідомлення під час пайплайну отримує pipeline_busy; перший пайплайн
 // завершується done; запит після done приймається.
 TEST_F(WsSearchTest, QueryWhilePipelineRunsIsRejectedWithPipelineBusy) {
-    expansion_delay_ = std::chrono::milliseconds(300);
+    expansion_delay_ms_ = 300;
     start(/*build=*/true);
     auto ws = connect();
     ws->write(net::buffer(std::string(R"({"query": "alpha"})")));
@@ -302,7 +304,7 @@ TEST_F(WsSearchTest, QueryWhilePipelineRunsIsRejectedWithPipelineBusy) {
     EXPECT_EQ(stage_of(read_message(*ws)), "keyword_search");
     EXPECT_EQ(stage_of(read_message(*ws)), "done");
 
-    expansion_delay_ = std::chrono::milliseconds(0);
+    expansion_delay_ms_ = 0;
     ws->write(net::buffer(std::string(R"({"query": "beta"})")));
     EXPECT_EQ(stage_of(read_message(*ws)), "query_expansion");
     EXPECT_EQ(stage_of(read_message(*ws)), "keyword_search");
@@ -311,7 +313,7 @@ TEST_F(WsSearchTest, QueryWhilePipelineRunsIsRejectedWithPipelineBusy) {
 
 // BDD-WS-06 / NFR-009: обрив клієнта A посеред пайплайну не впливає на клієнта B.
 TEST_F(WsSearchTest, ClientDisconnectMidPipelineDoesNotAffectOtherClients) {
-    expansion_delay_ = std::chrono::milliseconds(300);
+    expansion_delay_ms_ = 300;
     start(/*build=*/true);
     auto client_a = connect();
     client_a->write(net::buffer(std::string(R"({"query": "alpha"})")));
@@ -331,7 +333,7 @@ TEST_F(WsSearchTest, ClientDisconnectMidPipelineDoesNotAffectOtherClients) {
 // BDD-CON-02 / NFR-007: повільна Ollama у WS-сесії не блокує REST-пошук іншого клієнта.
 // Затримка D = 1 с; REST має завершитися менш ніж за D/2.
 TEST_F(WsSearchTest, SlowExpansionDoesNotBlockRestSearch) {
-    expansion_delay_ = std::chrono::milliseconds(1000);
+    expansion_delay_ms_ = 1000;
     start(/*build=*/true, /*use_pool=*/true);
     auto slow = connect();
     slow->write(net::buffer(std::string(R"({"query": "alpha"})")));
@@ -356,21 +358,26 @@ TEST_F(WsSearchTest, EightConcurrentSessionsAreIsolated) {
                                               "here",  "words", "alpha beta", "gamma delta"};
     std::vector<std::vector<std::string>> stages(queries.size());
     std::vector<std::string> originals(queries.size());
+    std::vector<std::string> errors(queries.size());
     std::vector<std::thread> clients;
     for (std::size_t i = 0; i < queries.size(); ++i) {
-        clients.emplace_back([this, i, &queries, &stages, &originals] {
-            net::io_context ioc;
-            websocket::stream<tcp::socket> ws(ioc);
-            ws.next_layer().connect({net::ip::make_address("127.0.0.1"), port_});
-            ws.handshake("127.0.0.1", "/ws/search");
-            ws.write(net::buffer(std::string(R"({"query": ")") + queries[i] + R"("})"));
-            for (int n = 0; n < 3; ++n) {
-                const auto message = read_message(ws);
-                stages[i].push_back(stage_of(message));
-                if (stage_of(message) == "query_expansion") {
-                    originals[i] =
-                        std::string(message.at("data").as_object().at("original").as_string());
+        clients.emplace_back([this, i, &queries, &stages, &originals, &errors] {
+            try {
+                net::io_context ioc;
+                websocket::stream<tcp::socket> ws(ioc);
+                ws.next_layer().connect({net::ip::make_address("127.0.0.1"), port_});
+                ws.handshake("127.0.0.1", "/ws/search");
+                ws.write(net::buffer(std::string(R"({"query": ")") + queries[i] + R"("})"));
+                for (int n = 0; n < 3; ++n) {
+                    const auto message = read_message(ws);
+                    stages[i].push_back(stage_of(message));
+                    if (stage_of(message) == "query_expansion") {
+                        originals[i] =
+                            std::string(message.at("data").as_object().at("original").as_string());
+                    }
                 }
+            } catch (const std::exception &e) {
+                errors[i] = e.what();
             }
         });
     }
@@ -382,28 +389,34 @@ TEST_F(WsSearchTest, EightConcurrentSessionsAreIsolated) {
                   (std::vector<std::string>{"query_expansion", "keyword_search", "done"}))
             << "сесія " << i;
         EXPECT_EQ(originals[i], queries[i]) << "сесія " << i;
+        EXPECT_TRUE(errors[i].empty()) << "сесія " << i << ": " << errors[i];
     }
 }
 
-// BDD-CON-06 / TEST-CONC-06: 4 сесії з затримкою Ollama 1 с завершуються паралельно (менш ніж за
-// 4 с від початку), а не по черзі.
+// BDD-CON-06 / TEST-CONC-06: 4 сесії з затримкою Ollama 1 с завершуються паралельно (менш ніж
+// за 4 с від початку), а не по черзі.
 TEST_F(WsSearchTest, ParallelPipelinesFinishWithinSerialBudget) {
-    expansion_delay_ = std::chrono::milliseconds(1000);
+    expansion_delay_ms_ = 1000;
     start(/*build=*/true, /*use_pool=*/true);
+    std::vector<std::string> errors(4);
     std::vector<char> finished(4, 0); // не vector<bool>: біти сусідніх елементів ділять слово
     std::vector<std::thread> clients;
     const auto started = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < finished.size(); ++i) {
-        clients.emplace_back([this, i, &finished] {
-            net::io_context ioc;
-            websocket::stream<tcp::socket> ws(ioc);
-            ws.next_layer().connect({net::ip::make_address("127.0.0.1"), port_});
-            ws.handshake("127.0.0.1", "/ws/search");
-            ws.write(net::buffer(std::string(R"({"query": "alpha"})")));
-            for (int n = 0; n < 3; ++n) {
-                read_message(ws);
+        clients.emplace_back([this, i, &finished, &errors] {
+            try {
+                net::io_context ioc;
+                websocket::stream<tcp::socket> ws(ioc);
+                ws.next_layer().connect({net::ip::make_address("127.0.0.1"), port_});
+                ws.handshake("127.0.0.1", "/ws/search");
+                ws.write(net::buffer(std::string(R"({"query": "alpha"})")));
+                for (int n = 0; n < 3; ++n) {
+                    read_message(ws);
+                }
+                finished[i] = 1;
+            } catch (const std::exception &e) {
+                errors[i] = e.what();
             }
-            finished[i] = 1;
         });
     }
     for (std::thread &client : clients) {
@@ -411,7 +424,17 @@ TEST_F(WsSearchTest, ParallelPipelinesFinishWithinSerialBudget) {
     }
     const auto elapsed = std::chrono::steady_clock::now() - started;
     for (std::size_t i = 0; i < finished.size(); ++i) {
-        EXPECT_TRUE(finished[i]) << "сесія " << i;
+        EXPECT_TRUE(finished[i]) << "сесія " << i << ": " << errors[i];
     }
     EXPECT_LT(elapsed, std::chrono::seconds(4));
+}
+
+// Кадр понад ліміт read_message_max (64 KiB для MAX_QUERY_LENGTH=200 тесту) закриває з'єднання
+// (код 1009), а не буферизується без меж.
+TEST_F(WsSearchTest, OversizedFrameClosesConnection) {
+    start(/*build=*/true);
+    auto ws = connect();
+    const std::string oversized = R"({"query": ")" + std::string(70 * 1024, 'a') + R"("})";
+    ws->write(net::buffer(oversized));
+    EXPECT_THROW(read_message(*ws), std::exception);
 }

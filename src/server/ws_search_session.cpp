@@ -6,6 +6,7 @@
 #include <boost/beast/core/buffers_to_string.hpp>
 #include <boost/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -145,6 +146,9 @@ WsSearchSession::~WsSearchSession() {
 void WsSearchSession::start(Request request) {
     // Таймер простою не встановлюється (OQ-12): сесія живе, доки її не закриє клієнт.
     beast::get_lowest_layer(ws_).expires_never();
+    // Beast за замовчуванням приймає кадри до 16 MiB. Ліміт — із запасом над максимальним
+    // запитом у JSON-екрануванні (\uXXXX); перевищення закриває з'єднання кодом 1009.
+    ws_.read_message_max(std::max<std::size_t>(64 * 1024, 8 * deps_.max_query_length + 1024));
     ws_.async_accept(request, [self = shared_from_this()](beast::error_code ec) {
         if (!ec) {
             self->read_next();
@@ -195,13 +199,24 @@ void WsSearchSession::handle_message(const std::string &text) {
         return;
     }
     busy_ = true;
-    if (deps_.expansion) {
-        deps_.expansion(query, [self = shared_from_this(), query](std::vector<std::string> terms) {
-            self->on_expansion(query, std::move(terms));
-        });
-        return;
+    try {
+        if (deps_.expansion) {
+            deps_.expansion(query,
+                            [self = shared_from_this(), query](std::vector<std::string> terms) {
+                                self->on_expansion(query, std::move(terms));
+                            });
+            return;
+        }
+        on_expansion(query, {});
+    } catch (const std::exception &e) {
+        std::cerr << "ws pipeline failed: " << e.what() << '\n';
+        fail_pipeline("internal_error", "internal server error");
     }
-    on_expansion(query, {});
+}
+
+void WsSearchSession::fail_pipeline(std::string_view code, std::string_view message) {
+    busy_ = false;
+    enqueue(serialize_error(code, message));
 }
 
 void WsSearchSession::on_expansion(const std::string &query, std::vector<std::string> terms) {
@@ -212,16 +227,24 @@ void WsSearchSession::on_expansion(const std::string &query, std::vector<std::st
 void WsSearchSession::run_keyword(const std::string &query, const std::vector<std::string> &terms) {
     // Пошук виконується у пулі (TCK-019); результат повертається в io_context через post.
     auto executor = ws_.get_executor();
-    auto work = [self = shared_from_this(), executor, handler = deps_.search, query, terms]() {
+    // self переміщується в post: копія в задачі пулу звільняється до того, як сесія
+    // знищується, тож ~WsSearchSession виконується лише в потоці io_context.
+    auto work = [self = shared_from_this(), executor, handler = deps_.search, query,
+                 terms]() mutable {
         KeywordOutcome outcome = run_keyword_search(handler, query, terms);
-        net::post(executor, [self, outcome = std::move(outcome)]() mutable {
+        net::post(executor, [self = std::move(self), outcome = std::move(outcome)]() mutable {
             self->on_keyword(std::move(outcome));
         });
     };
-    if (deps_.executor) {
-        deps_.executor(std::move(work));
-    } else {
-        work();
+    try {
+        if (deps_.executor) {
+            deps_.executor(std::move(work));
+        } else {
+            work();
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "ws search dispatch failed: " << e.what() << '\n';
+        fail_pipeline("internal_error", "internal server error");
     }
 }
 

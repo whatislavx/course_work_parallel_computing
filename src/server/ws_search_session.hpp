@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace search::server {
@@ -62,6 +63,8 @@ class WsSearchSession : public std::enable_shared_from_this<WsSearchSession> {
     void handle_message(const std::string &text);
     void on_expansion(const std::string &query, std::vector<std::string> terms);
     void run_keyword(const std::string &query, const std::vector<std::string> &terms);
+    // Завершує поточний пайплайн помилкою, не залишаючи сесію зайнятою (busy_).
+    void fail_pipeline(std::string_view code, std::string_view message);
     void on_keyword(KeywordOutcome outcome);
 
     // Черга вихідних кадрів: WebSocket допускає лише одну операцію запису одночасно.
