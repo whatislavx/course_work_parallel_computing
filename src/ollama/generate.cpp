@@ -143,13 +143,59 @@ std::optional<std::string> parse_generate_response(std::string_view body) {
     return std::string(response->as_string());
 }
 
+namespace {
+
+// Повертає одне слово-кандидат з фрагмента відповіді або порожній рядок. Фрагмент приймається
+// лише якщо після відкидання маркера списку ("1.", "2)") і преамбули до останнього ':'
+// лишається рівно одне слово з літер чи цифр, а не числа.
+std::string single_word_candidate(std::string_view fragment) {
+    std::size_t begin = 0;
+    while (begin < fragment.size() && fragment[begin] == ' ') {
+        ++begin;
+    }
+    std::size_t digits_end = begin;
+    while (digits_end < fragment.size() && fragment[digits_end] >= '0' &&
+           fragment[digits_end] <= '9') {
+        ++digits_end;
+    }
+    if (digits_end > begin && digits_end < fragment.size() &&
+        (fragment[digits_end] == '.' || fragment[digits_end] == ')')) {
+        begin = digits_end + 1;
+    }
+    fragment = fragment.substr(begin);
+    const std::size_t colon = fragment.rfind(':');
+    if (colon != std::string_view::npos) {
+        fragment = fragment.substr(colon + 1);
+    }
+    const std::vector<std::string> words = index::tokenize(fragment);
+    if (words.size() != 1) {
+        return {};
+    }
+    const std::string &word = words.front();
+    const bool all_digits = std::all_of(word.begin(), word.end(), [](char c) {
+        return c >= '0' && c <= '9';
+    });
+    return all_digits ? std::string() : word;
+}
+
+} // namespace
+
 std::vector<std::string> parse_expansion_terms(std::string_view model_text,
                                                const std::vector<std::string> &query_terms,
                                                std::size_t max_terms) {
+    // Відповідь розбиваємо на фрагменти по ',', ';' і переносу рядка. Преамбула або нумерація
+    // дають багатослівні фрагменти, які відкидаються, а не стають термами розширення.
     std::vector<std::string> terms;
-    for (std::string &token : index::tokenize(model_text)) {
-        if (terms.size() >= max_terms) {
-            break;
+    std::size_t start = 0;
+    while (start <= model_text.size() && terms.size() < max_terms) {
+        std::size_t stop = model_text.find_first_of(",;\n", start);
+        if (stop == std::string_view::npos) {
+            stop = model_text.size();
+        }
+        std::string token = single_word_candidate(model_text.substr(start, stop - start));
+        start = stop + 1;
+        if (token.empty()) {
+            continue;
         }
         const bool in_query =
             std::find(query_terms.begin(), query_terms.end(), token) != query_terms.end();
