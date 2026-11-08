@@ -17,7 +17,8 @@ add_executable(search_tests
     ollama_test.cpp
     expansion_fallback_test.cpp
     ws_search_test.cpp
+    cli_test.cpp
 )
-target_link_libraries(search_tests PRIVATE search_core GTest::gtest_main)
+target_link_libraries(search_tests PRIVATE search_core search_cli_core GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(search_tests PROPERTIES TIMEOUT 120)
