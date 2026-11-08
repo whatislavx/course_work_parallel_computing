@@ -31,7 +31,7 @@ export function errorMessageFromEvent(event) {
 }
 
 export function unavailableMessage() {
-  return 'Пошуковий сервер недоступний. Перевірте, що сервіс запущено (BDD-WEB-07).';
+  return 'Пошуковий сервер недоступний. Перевірте, що сервіс запущено.';
 }
 
 // Класифікує подію етапу для відображення.
@@ -80,15 +80,43 @@ function wsUrl() {
   return `${scheme}//${location.host}/ws/search`;
 }
 
+// Поточне з'єднання. Новий пошук закриває попереднє; його події ігноруються (гонка двох запитів).
+let currentSocket = null;
+
 function runSearch(query) {
-  // Одне з'єднання на запит: сторінка не тримає відкритих сесій між пошуками.
+  if (currentSocket) {
+    const previous = currentSocket;
+    currentSocket = null;
+    previous.close();
+  }
+  const socket = new WebSocket(wsUrl());
+  currentSocket = socket;
   let received = false;
   let finished = false;
-  const socket = new WebSocket(wsUrl());
+  const isCurrent = () => currentSocket === socket;
+  const finish = (model) => {
+    finished = true;
+    if (isCurrent()) {
+      currentSocket = null;
+      if (model) {
+        render(model);
+      }
+    }
+    socket.close();
+  };
   render({ status: 'Пошук…' });
   socket.addEventListener('open', () => socket.send(JSON.stringify({ query })));
   socket.addEventListener('message', (message) => {
-    const event = JSON.parse(message.data);
+    if (!isCurrent()) {
+      return;
+    }
+    let event;
+    try {
+      event = JSON.parse(message.data);
+    } catch {
+      finish({ status: 'Помилка сервера.', error: true });
+      return;
+    }
     const model = classifyStage(event);
     if (model.type === 'expansion') {
       render({ status: 'Розширення запиту…' });
@@ -96,22 +124,24 @@ function runSearch(query) {
       received = true;
       render({ status: model.empty ? 'Нічого не знайдено.' : '', items: model.items });
     } else if (model.type === 'error') {
-      finished = true;
-      render({ status: model.message, error: true });
-      socket.close();
+      finish({ status: model.message, error: true });
     } else if (model.type === 'done') {
-      finished = true;
-      socket.close();
+      if (received) {
+        finish(null);
+      } else {
+        finish({ status: 'Відповідь неповна: результатів не отримано.', error: true });
+      }
     }
   });
   socket.addEventListener('error', () => {
-    if (!finished) {
-      render({ status: unavailableMessage(), error: true });
+    if (!finished && isCurrent()) {
+      finish({ status: unavailableMessage(), error: true });
     }
   });
   socket.addEventListener('close', () => {
-    if (!finished && !received) {
-      render({ status: unavailableMessage(), error: true });
+    if (!finished && isCurrent()) {
+      const message = received ? 'Відповідь неповна: з\'єднання перервано.' : unavailableMessage();
+      finish({ status: message, error: true });
     }
   });
 }
