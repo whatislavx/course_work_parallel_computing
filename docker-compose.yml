@@ -16,7 +16,7 @@ services:
     entrypoint: ["/bin/sh", "/provision/ollama-provision.sh"]
     environment:
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-tinyllama}  # ПЛЕЙСХОЛДЕР (OQ-13)
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}  # ADR-005 (OQ-13)
     volumes:
       - ./docker/ollama-provision.sh:/provision/ollama-provision.sh:ro
     depends_on:
@@ -35,7 +35,7 @@ services:
       SERVER_PORT: "8080"
       DATASET_DIR: /data/docs
       OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-tinyllama}  # ПЛЕЙСХОЛДЕР (OQ-13)
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}  # ADR-005 (OQ-13)
     volumes:
       - ${DATASET_HOST_DIR:-./dataset}:/data/docs:ro  # датасет: OQ-01, ще не затверджено
     depends_on:
