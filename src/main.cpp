@@ -3,6 +3,7 @@
 #include "index/tokenizer.hpp"
 #include "ollama/generate.hpp"
 #include "ollama/probe.hpp"
+#include "pool/thread_pool.hpp"
 #include "query/search_service.hpp"
 #include "server/http_server.hpp"
 
@@ -34,6 +35,13 @@ int main() {
         // Менеджер оголошено після ioc: він знищується першим і приєднує потік побудови,
         // доки io_context ще живий для відкладених відповідей.
         search::index::IndexManager index_manager;
+        // Пул пошуку (TCK-019, варіант A): важка робота не блокує io_context. Місткість черги
+        // не менша за ліміт з'єднань, тож подача задач не блокується.
+        const std::size_t logical_cpus =
+            std::max<std::size_t>(1, std::thread::hardware_concurrency());
+        const std::size_t search_threads =
+            cfg.search_worker_threads == 0 ? logical_cpus : cfg.search_worker_threads;
+        search::pool::ThreadPool search_pool(search_threads, cfg.max_concurrent_connections);
         std::unique_ptr<search::query::SearchService> search_service;
 
         search::server::ServerOptions options;
@@ -67,6 +75,10 @@ int main() {
             return search_service->search(text, extra);
         };
         options.max_query_length = cfg.max_query_length;
+        options.max_concurrent_connections = cfg.max_concurrent_connections;
+        options.search_executor = [&search_pool](std::function<void()> task) {
+            search_pool.submit(std::move(task));
+        };
 
         // EP-03, mode "expanded" (OQ-02): розширення через Ollama /api/generate. Без моделі
         // розширення вимкнено; збій або тайм-аут дає пошук без розширення (FR-021).

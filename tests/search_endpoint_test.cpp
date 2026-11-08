@@ -1,5 +1,6 @@
 // Тести EP-03 (POST /api/search): парсер тіла, сервіс пошуку і HTTP-контракт (TCK-017).
 #include "index/index_manager.hpp"
+#include "pool/thread_pool.hpp"
 #include "query/search_service.hpp"
 #include "server/http_server.hpp"
 #include "server/router.hpp"
@@ -13,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -199,6 +201,13 @@ class SearchEndpointTest : public ::testing::Test {
             };
         }
         options.max_query_length = 256;
+        options.max_concurrent_connections = max_connections_;
+        if (use_pool_) {
+            pool_ = std::make_unique<search::pool::ThreadPool>(4, 64);
+            options.search_executor = [this](std::function<void()> task) {
+                pool_->submit(std::move(task));
+            };
+        }
         server_ = std::make_unique<search::server::HttpServer>(ioc_, options);
         server_->start();
         port_ = server_->port();
@@ -229,6 +238,9 @@ class SearchEndpointTest : public ::testing::Test {
     }
 
     std::optional<std::vector<std::string>> expansion_terms_;
+    std::size_t max_connections_ = 64;
+    bool use_pool_ = false;
+    std::unique_ptr<search::pool::ThreadPool> pool_;
     std::filesystem::path dataset_;
     search::index::IndexManager manager_;
     std::unique_ptr<SearchService> search_service_;
@@ -302,6 +314,51 @@ TEST_F(SearchEndpointTest, ExpandedTermsAffectRanking) {
     const auto &results = parsed.as_object().at("results").as_array();
     ASSERT_EQ(results.size(), 1u);
     EXPECT_EQ(results[0].as_object().at("doc_id").as_string(), "a.txt");
+}
+
+// Ліміт з'єднань (TCK-019): понад ліміт — 503 server_busy; /api/health обслуговується.
+TEST_F(SearchEndpointTest, OverConnectionLimitReturnsServerBusyButHealthIsServed) {
+    max_connections_ = 1;
+    start_server();
+    // Утримуємо одне з'єднання з незавершеним заголовком: сесія активна.
+    net::io_context holder_ioc;
+    tcp::socket holder(holder_ioc);
+    holder.connect({net::ip::make_address("127.0.0.1"), port_});
+    net::write(holder, net::buffer(std::string("GET /api/stats HTTP/1.1\r\nHost: x\r\n")));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    const auto busy = request(http::verb::get, "/api/stats");
+    EXPECT_EQ(busy.result(), http::status::service_unavailable);
+    EXPECT_EQ(error_code_of(busy), "server_busy");
+    EXPECT_EQ(request(http::verb::get, "/api/health").result(), http::status::ok);
+    beast::error_code ignored;
+    holder.close(ignored);
+}
+
+// Пошук через пул потоків: паралельні запити обслуговуються без помилок і з коректним ранжуванням.
+TEST_F(SearchEndpointTest, ParallelSearchesThroughPoolAllSucceed) {
+    use_pool_ = true;
+    start_server();
+    build_index();
+    std::vector<std::thread> clients;
+    std::atomic<int> ok{0};
+    for (int c = 0; c < 8; ++c) {
+        clients.emplace_back([this, &ok] {
+            for (int i = 0; i < 5; ++i) {
+                const auto res = request(http::verb::post, "/api/search",
+                                         R"({"query": "alpha", "mode": "keyword"})");
+                if (res.result() == http::status::ok &&
+                    boost::json::parse(res.body()).as_object().at("results").as_array().size() ==
+                        2u) {
+                    ++ok;
+                }
+            }
+        });
+    }
+    for (auto &t : clients) {
+        t.join();
+    }
+    EXPECT_EQ(ok.load(), 40);
 }
 
 TEST_F(SearchEndpointTest, GetOnSearchReturnsMethodNotAllowed) {

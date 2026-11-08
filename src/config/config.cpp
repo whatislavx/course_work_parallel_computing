@@ -60,6 +60,14 @@ Config parse_config(const EnvLookup &lookup) {
     if (const auto v = lookup("OLLAMA_TIMEOUT_MS")) {
         cfg.ollama_timeout_ms = parse_integer<std::size_t>("OLLAMA_TIMEOUT_MS", *v, 1, 600000);
     }
+    if (const auto v = lookup("SEARCH_WORKER_THREADS")) {
+        cfg.search_worker_threads =
+            parse_integer<std::size_t>("SEARCH_WORKER_THREADS", *v, 0, 1024);
+    }
+    if (const auto v = lookup("MAX_CONCURRENT_CONNECTIONS")) {
+        cfg.max_concurrent_connections =
+            parse_integer<std::size_t>("MAX_CONCURRENT_CONNECTIONS", *v, 1, 10000);
+    }
     if (const auto v = lookup("MAX_EXPANDED_TERMS")) {
         cfg.max_expanded_terms = parse_integer<std::size_t>("MAX_EXPANDED_TERMS", *v, 1, 50);
     }

@@ -8,6 +8,7 @@
 #include <boost/json.hpp>
 
 #include <array>
+#include <atomic>
 #include <boost/none.hpp>
 #include <cstddef>
 #include <exception>
@@ -29,15 +30,23 @@ constexpr std::size_t kMaxDrainBytes = 1 << 20;
 
 class Session : public std::enable_shared_from_this<Session> {
   public:
-    Session(tcp::socket socket, const ServerOptions &options)
+    Session(tcp::socket socket, const ServerOptions &options,
+            std::shared_ptr<std::atomic<std::size_t>> active_sessions)
         : stream_(std::move(socket)), max_body_bytes_(options.max_request_body_bytes),
           timeout_(options.request_timeout), ollama_check_(options.ollama_check),
           index_start_(options.index_start), default_index_threads_(options.default_index_threads),
           max_index_threads_(options.max_index_threads), stats_provider_(options.stats_provider),
           search_handler_(options.search_handler), expansion_handler_(options.expansion_handler),
-          max_query_length_(options.max_query_length) {}
+          max_query_length_(options.max_query_length), search_executor_(options.search_executor),
+          max_connections_(options.max_concurrent_connections),
+          active_sessions_(std::move(active_sessions)) {}
 
-    void start() { read_header(); }
+    ~Session() { active_sessions_->fetch_sub(1); }
+
+    void start() {
+        active_sessions_->fetch_add(1);
+        read_header();
+    }
 
   private:
     void read_header() {
@@ -67,6 +76,12 @@ class Session : public std::enable_shared_from_this<Session> {
             return;
         }
 
+        // Ліміт з'єднань (TCK-019). Health завжди обслуговується (FR-001).
+        if (!is_health_request(parser_.get()) && active_sessions_->load() > max_connections_) {
+            send(error_response(http::status::service_unavailable, "server_busy",
+                                "too many concurrent connections"));
+            return;
+        }
         if (is_health_request(parser_.get()) && ollama_check_) {
             ollama_check_(
                 [self = shared_from_this()](bool available) { self->dispatch(available); });
@@ -203,27 +218,44 @@ class Session : public std::enable_shared_from_this<Session> {
     // Пошук і відповідь 200. Винятки обробника ловимо тут: вони не виходять з io_context.
     // send викликається рівно один раз.
     void complete_search(const std::string &text, const std::vector<std::string> &extra_terms) {
-        Response response = internal_error_response();
+        if (!search_executor_) {
+            send(run_search(search_handler_, text, extra_terms));
+            return;
+        }
+        // Пошук у пулі; результат повертаємо в io_context через post. Сесія тримається живою
+        // копією self, доки відповідь не надіслано.
+        search_executor_(
+            [self = shared_from_this(), handler = search_handler_, text, extra_terms]() {
+                Response response = run_search(handler, text, extra_terms);
+                net::post(self->stream_.get_executor(),
+                          [self, response = std::move(response)]() mutable {
+                              self->send(std::move(response));
+                          });
+            });
+    }
+
+    // Виконує пошук і формує відповідь. Винятки не виходять назовні.
+    static Response run_search(const SearchHandler &handler, const std::string &text,
+                               const std::vector<std::string> &extra_terms) {
         try {
-            if (!search_handler_) {
-                response = error_response(http::status::internal_server_error, "internal_error",
-                                          "search endpoint is not configured");
-            } else {
-                const auto started = std::chrono::steady_clock::now();
-                std::vector<query::SearchHit> hits = search_handler_(text, extra_terms);
-                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - started);
-                response = search_response(hits, static_cast<std::uint64_t>(elapsed.count()));
+            if (!handler) {
+                return error_response(http::status::internal_server_error, "internal_error",
+                                      "search endpoint is not configured");
             }
+            const auto started = std::chrono::steady_clock::now();
+            std::vector<query::SearchHit> hits = handler(text, extra_terms);
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started);
+            return search_response(hits, static_cast<std::uint64_t>(elapsed.count()));
         } catch (const query::IndexNotReadyError &) {
-            response =
-                error_response(http::status::conflict, "index_not_ready", "index is not built yet");
+            return error_response(http::status::conflict, "index_not_ready",
+                                  "index is not built yet");
         } catch (const std::exception &e) {
             std::cerr << "search failed: " << e.what() << '\n';
         } catch (...) {
-            // Невідомий тип винятку: відповідь 500 вище.
+            // Невідомий тип винятку: нижче — 500.
         }
-        send(std::move(response));
+        return internal_error_response();
     }
 
     void on_search_body(beast::error_code ec) {
@@ -328,6 +360,9 @@ class Session : public std::enable_shared_from_this<Session> {
     SearchHandler search_handler_;
     ExpansionHandler expansion_handler_;
     std::size_t max_query_length_;
+    SearchExecutor search_executor_;
+    std::size_t max_connections_;
+    std::shared_ptr<std::atomic<std::size_t>> active_sessions_;
     std::array<char, 4096> scratch_{};
     std::size_t drained_ = 0;
 };
@@ -360,7 +395,7 @@ void HttpServer::do_accept() {
             return;
         }
         if (!ec) {
-            std::make_shared<Session>(std::move(socket), options_)->start();
+            std::make_shared<Session>(std::move(socket), options_, active_sessions_)->start();
             do_accept();
             return;
         }
