@@ -1,5 +1,7 @@
 #include "config/config.hpp"
 #include "index/index_manager.hpp"
+#include "index/tokenizer.hpp"
+#include "ollama/generate.hpp"
 #include "ollama/probe.hpp"
 #include "query/search_service.hpp"
 #include "server/http_server.hpp"
@@ -14,6 +16,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <thread>
 
@@ -59,10 +62,35 @@ int main() {
         search_service = std::make_unique<search::query::SearchService>(
             [&index_manager] { return index_manager.snapshot(); }, cfg.dataset_dir,
             search::query::SearchOptions{cfg.search_top_k, cfg.snippet_max_chars});
-        options.search_handler = [&search_service](std::string_view text) {
-            return search_service->search(text);
+        options.search_handler = [&search_service](std::string_view text,
+                                                   const std::vector<std::string> &extra) {
+            return search_service->search(text, extra);
         };
         options.max_query_length = cfg.max_query_length;
+
+        // EP-03, mode "expanded" (OQ-02): розширення через Ollama /api/generate. Без моделі
+        // розширення вимкнено; збій або тайм-аут дає пошук без розширення (FR-021).
+        if (!ollama_endpoint->model.empty()) {
+            const auto expansion_timeout = std::chrono::milliseconds(cfg.ollama_timeout_ms);
+            const std::size_t max_terms = cfg.max_expanded_terms;
+            options.expansion_handler =
+                [&ioc, endpoint = *ollama_endpoint, expansion_timeout,
+                 max_terms](std::string text, std::function<void(std::vector<std::string>)> done) {
+                    const std::vector<std::string> query_terms = search::index::tokenize(text);
+                    search::ollama::generate(
+                        ioc, endpoint, search::ollama::build_expansion_prompt(text, max_terms),
+                        expansion_timeout,
+                        [query_terms, max_terms,
+                         done = std::move(done)](std::optional<std::string> response) {
+                            if (!response) {
+                                done({});
+                                return;
+                            }
+                            done(search::ollama::parse_expansion_terms(*response, query_terms,
+                                                                       max_terms));
+                        });
+                };
+        }
 
         search::server::HttpServer server(ioc, options);
         server.start();

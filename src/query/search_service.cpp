@@ -55,7 +55,8 @@ SearchService::SearchService(SnapshotProvider snapshot_provider, std::filesystem
     : snapshot_provider_(std::move(snapshot_provider)), dataset_dir_(std::move(dataset_dir)),
       options_(options) {}
 
-std::vector<SearchHit> SearchService::search(std::string_view query) const {
+std::vector<SearchHit> SearchService::search(std::string_view query,
+                                             const std::vector<std::string> &extra_terms) const {
     const std::shared_ptr<const index::SharedInvertedIndex> snapshot =
         snapshot_provider_ ? snapshot_provider_() : nullptr;
     if (!snapshot) {
@@ -65,8 +66,11 @@ std::vector<SearchHit> SearchService::search(std::string_view query) const {
     if (terms.empty()) {
         return {};
     }
+    std::vector<std::string> ranking_terms = terms;
+    ranking_terms.insert(ranking_terms.end(), extra_terms.begin(), extra_terms.end());
 
-    std::vector<ranking::ScoredDocument> ranked = ranking::rank_tfidf(*snapshot, terms);
+    std::vector<ranking::ScoredDocument> ranked =
+        ranking::rank_tfidf(*snapshot, std::move(ranking_terms));
     if (ranked.size() > options_.top_k) {
         ranked.resize(options_.top_k);
     }

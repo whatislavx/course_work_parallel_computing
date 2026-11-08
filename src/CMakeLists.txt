@@ -20,6 +20,7 @@ add_library(search_core STATIC
     query/search_service.cpp
     ollama/endpoint.cpp
     ollama/probe.cpp
+    ollama/generate.cpp
 )
 target_include_directories(search_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(search_core PUBLIC search_warnings Boost::json Threads::Threads)

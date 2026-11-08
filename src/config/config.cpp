@@ -57,6 +57,12 @@ Config parse_config(const EnvLookup &lookup) {
     if (const auto v = lookup("MAX_QUERY_LENGTH")) {
         cfg.max_query_length = parse_integer<std::size_t>("MAX_QUERY_LENGTH", *v, 1, 4096);
     }
+    if (const auto v = lookup("OLLAMA_TIMEOUT_MS")) {
+        cfg.ollama_timeout_ms = parse_integer<std::size_t>("OLLAMA_TIMEOUT_MS", *v, 1, 600000);
+    }
+    if (const auto v = lookup("MAX_EXPANDED_TERMS")) {
+        cfg.max_expanded_terms = parse_integer<std::size_t>("MAX_EXPANDED_TERMS", *v, 1, 50);
+    }
     if (const auto v = lookup("SNIPPET_MAX_CHARS")) {
         cfg.snippet_max_chars = parse_integer<std::size_t>("SNIPPET_MAX_CHARS", *v, 1, 10000);
     }
