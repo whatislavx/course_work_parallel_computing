@@ -170,7 +170,7 @@ node --test web/test/app.test.mjs
 
 Параметри читаються з змінних середовища. Приклад — у `.env.example`. Значення за замовчуванням і межі — у `src/config/config.hpp`. Compose передає в сервер значення з `.env` (`env_file`); значення, задані в `environment:` у `docker-compose.yml`, мають пріоритет.
 
-Ключові змінні: `SERVER_PORT`, `DATASET_DIR`, `DATASET_HOST_DIR`, `DEFAULT_INDEX_THREADS`, `MAX_INDEX_THREADS`, `MAX_REQUEST_BODY_BYTES`, `REQUEST_TIMEOUT_MS`, `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS`, `SEARCH_TOP_K`, `MAX_QUERY_LENGTH`, `SNIPPET_MAX_CHARS`, `MAX_EXPANDED_TERMS`.
+Ключові змінні: `SERVER_PORT`, `DATASET_DIR`, `DATASET_HOST_DIR`, `DEFAULT_INDEX_THREADS`, `MAX_INDEX_THREADS`, `MAX_REQUEST_BODY_BYTES`, `REQUEST_TIMEOUT_MS`, `SHUTDOWN_TIMEOUT_MS`, `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS`, `SEARCH_TOP_K`, `MAX_QUERY_LENGTH`, `SNIPPET_MAX_CHARS`, `MAX_EXPANDED_TERMS`.
 
 ## Структура репозиторію
 
@@ -190,7 +190,7 @@ docs/          Вимоги, специфікація, архітектура, A
 
 - Датасет і його джерело ще не затверджені (OQ-01).
 - Повний запуск compose з чистого клону і E2E-тести не виконані в середовищі розробки (потрібен Docker-демон).
-- При SIGTERM побудова індексу скасовується кооперативно: індекс не активується, процес виходить зі статусом 0. Пауза на відправлення закриттів фіксована (1 с), `SHUTDOWN_TIMEOUT_MS` з NFR-026 ще не винесено в конфігурацію. Клієнт `POST /api/index`, чия побудова скасована, отримує відповідь з кодом `build_cancelled`, а не обрив з'єднання, як вимагає 06 §2.
+- При SIGTERM побудова індексу скасовується кооперативно: індекс не активується, процес виходить зі статусом 0. Пауза на відправлення закриттів задається `SHUTDOWN_TIMEOUT_MS` (за замовчуванням 2000 мс; значення не визначено специфікацією, OQ-32). Клієнт `POST /api/index`, чия побудова скасована, отримує відповідь з кодом `build_cancelled`, а не обрив з'єднання, як вимагає 06 §2. Відхилення погоджено власником.
 - Очікування завершення при зупинці (`stop_grace_period`) не перевірено в Docker.
 - Перевірка path traversal у запущеному Web-контейнері не виконана.
 - Синтаксис PlantUML-діаграм (`docs/architecture/uml/`) не перевірено рендером.

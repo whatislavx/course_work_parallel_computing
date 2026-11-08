@@ -30,6 +30,9 @@ struct Config {
     std::size_t health_check_timeout_ms = 2000; // HEALTH_CHECK_TIMEOUT_MS; тимчасово (OQ-14)
     std::size_t request_timeout_ms =
         10000; // REQUEST_TIMEOUT_MS; тайм-аут читання/запису, тимчасово
+    // SHUTDOWN_TIMEOUT_MS: пауза при зупинці на відправлення WS-закриттів 1001 до виходу
+    // (NFR-026). Значення за замовчуванням не визначено специфікацією (OQ-32), обрано 2000 мс.
+    std::size_t shutdown_timeout_ms = 2000;
     std::string ollama_url = "http://ollama:11434"; // OLLAMA_URL
     std::string ollama_model; // OLLAMA_MODEL; порожньо = лише доступність (OQ-13)
     // Пошук (OQ-06): значення тимчасові, до затвердження.

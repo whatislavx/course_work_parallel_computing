@@ -79,6 +79,12 @@ TEST(Config, RequestTimeoutDefaultAndOverride) {
     EXPECT_THROW(parse_config(env_from({{"REQUEST_TIMEOUT_MS", "0"}})), ConfigError);
 }
 
+TEST(Config, ShutdownTimeoutDefaultAndOverride) {
+    EXPECT_EQ(parse_config(env_from({})).shutdown_timeout_ms, 2000U);
+    EXPECT_EQ(parse_config(env_from({{"SHUTDOWN_TIMEOUT_MS", "500"}})).shutdown_timeout_ms, 500U);
+    EXPECT_THROW(parse_config(env_from({{"SHUTDOWN_TIMEOUT_MS", "0"}})), ConfigError);
+}
+
 TEST(Config, MaxIndexThreadsDefaultsAndOverrides) {
     EXPECT_EQ(parse_config(env_from({})).max_index_threads, 64U);
     EXPECT_EQ(parse_config(env_from({{"MAX_INDEX_THREADS", "16"}})).max_index_threads, 16U);
