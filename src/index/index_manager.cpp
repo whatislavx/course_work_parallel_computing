@@ -12,7 +12,12 @@
 
 namespace search::index {
 
-IndexManager::~IndexManager() { wait_for_build_thread(); }
+IndexManager::~IndexManager() {
+    request_cancel();
+    wait_for_build_thread();
+}
+
+void IndexManager::request_cancel() { cancel_requested_.store(true); }
 
 bool IndexManager::start_build(std::filesystem::path dataset_dir, std::size_t threads,
                                BuildCallback on_done) {
@@ -77,7 +82,8 @@ void IndexManager::run_build(std::filesystem::path dataset_dir, std::size_t thre
     BuildResult result;
     try {
         DiscoveryResult discovery = load_documents(dataset_dir);
-        std::unique_ptr<SharedInvertedIndex> built = build_index(discovery.documents, threads);
+        std::unique_ptr<SharedInvertedIndex> built =
+            build_index(discovery.documents, threads, tokenize, &cancel_requested_);
         const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - started);
 
@@ -97,6 +103,10 @@ void IndexManager::run_build(std::filesystem::path dataset_dir, std::size_t thre
         idle_cv_.notify_all();
     } catch (const DatasetError &e) {
         result.error_code = "dataset_unavailable";
+        result.error_message = e.what();
+        finish_build(result);
+    } catch (const BuildCancelledError &e) {
+        result.error_code = "build_cancelled";
         result.error_message = e.what();
         finish_build(result);
     } catch (const IndexBuildError &e) {

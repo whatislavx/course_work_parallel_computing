@@ -33,7 +33,8 @@ constexpr std::size_t kMaxDrainBytes = 1 << 20;
 class Session : public std::enable_shared_from_this<Session> {
   public:
     Session(tcp::socket socket, const ServerOptions &options,
-            std::shared_ptr<std::atomic<std::size_t>> active_sessions)
+            std::shared_ptr<std::atomic<std::size_t>> active_sessions,
+            std::shared_ptr<WsSessionRegistry> ws_registry)
         : stream_(std::move(socket)), max_body_bytes_(options.max_request_body_bytes),
           timeout_(options.request_timeout), ollama_check_(options.ollama_check),
           index_start_(options.index_start), default_index_threads_(options.default_index_threads),
@@ -41,7 +42,7 @@ class Session : public std::enable_shared_from_this<Session> {
           search_handler_(options.search_handler), expansion_handler_(options.expansion_handler),
           max_query_length_(options.max_query_length), search_executor_(options.search_executor),
           index_ready_(options.index_ready), max_connections_(options.max_concurrent_connections),
-          active_sessions_(std::move(active_sessions)) {}
+          active_sessions_(std::move(active_sessions)), ws_registry_(std::move(ws_registry)) {}
 
     ~Session() {
         if (owns_count_) {
@@ -103,9 +104,10 @@ class Session : public std::enable_shared_from_this<Session> {
     // WS /ws/search (TCK-022): сокет і лічильник з'єднань переходять до WsSearchSession.
     void start_ws_search() {
         owns_count_ = false;
-        WsSearchDeps deps{expansion_handler_, search_handler_,   search_executor_,
-                          index_ready_,       max_query_length_, active_sessions_};
+        WsSearchDeps deps{expansion_handler_, search_handler_,  search_executor_, index_ready_,
+                          max_query_length_,  active_sessions_, ws_registry_};
         auto session = std::make_shared<WsSearchSession>(std::move(stream_), std::move(deps));
+        ws_registry_->add(session);
         session->start(parser_.release());
     }
 
@@ -385,6 +387,7 @@ class Session : public std::enable_shared_from_this<Session> {
     std::function<bool()> index_ready_;
     std::size_t max_connections_;
     std::shared_ptr<std::atomic<std::size_t>> active_sessions_;
+    std::shared_ptr<WsSessionRegistry> ws_registry_;
     bool owns_count_ = true; // false після передачі з'єднання WebSocket-сесії
     std::array<char, 4096> scratch_{};
     std::size_t drained_ = 0;
@@ -393,7 +396,8 @@ class Session : public std::enable_shared_from_this<Session> {
 } // namespace
 
 HttpServer::HttpServer(net::io_context &ioc, const ServerOptions &options)
-    : options_(options), acceptor_(ioc), retry_timer_(ioc) {
+    : options_(options), ws_registry_(std::make_shared<WsSessionRegistry>()), acceptor_(ioc),
+      retry_timer_(ioc) {
     const tcp::endpoint endpoint(tcp::v4(), options.port);
     acceptor_.open(endpoint.protocol());
     acceptor_.set_option(net::socket_base::reuse_address(true));
@@ -408,7 +412,11 @@ void HttpServer::stop() {
     beast::error_code ignored;
     acceptor_.close(ignored);
     retry_timer_.cancel(ignored);
+    // Закриття WS-сесій з 1001 (TCK-039): клієнт знає, що сервер зупиняється, а не збій.
+    ws_registry_->close_all_going_away();
 }
+
+std::size_t HttpServer::open_ws_sessions() { return ws_registry_->open_count(); }
 
 std::uint16_t HttpServer::port() const { return acceptor_.local_endpoint().port(); }
 
@@ -418,7 +426,8 @@ void HttpServer::do_accept() {
             return;
         }
         if (!ec) {
-            std::make_shared<Session>(std::move(socket), options_, active_sessions_)->start();
+            std::make_shared<Session>(std::move(socket), options_, active_sessions_, ws_registry_)
+                ->start();
             do_accept();
             return;
         }

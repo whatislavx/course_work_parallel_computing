@@ -31,6 +31,25 @@ struct WsSearchDeps {
     // Лічильник з'єднань сервера (TCK-019). Збільшений вже в Session; сесія зменшує його у
     // своєму деструкторі.
     std::shared_ptr<std::atomic<std::size_t>> active_sessions;
+    // Реєстр для закриття 1001 під час зупинки (TCK-039). Порожньо = не реєструвати.
+    std::shared_ptr<WsSessionRegistry> registry;
+};
+
+class WsSearchSession;
+
+// Реєстр живих WS-сесій (TCK-039): під час зупинки сервер закриває їх кодом 1001.
+// Thread-safe: ні; усі виклики з потоку io_context. Сесії тримаються слабко, тож реєстр не
+// продовжує їхнє життя.
+class WsSessionRegistry {
+  public:
+    void add(const std::shared_ptr<WsSearchSession> &session);
+    // Надсилає закриття 1001 кожній живій сесії (WS-S-03, NFR-026).
+    void close_all_going_away();
+    std::size_t open_count();
+
+  private:
+    void prune();
+    std::vector<std::weak_ptr<WsSearchSession>> sessions_;
 };
 
 // Результат етапу keyword_search: або hits і час, або код помилки (06 §4.5).
@@ -57,6 +76,10 @@ class WsSearchSession : public std::enable_shared_from_this<WsSearchSession> {
     // Завершує WebSocket-рукостискання за HTTP-запитом Upgrade і починає читання повідомлень.
     void start(Request request);
 
+    // Починає закриття з кодом 1001 (going away). Чекає, доки поточний запис завершиться, і
+    // відкидає невідправлені кадри. Повторний виклик безпечний. Викликати з io_context.
+    void close_going_away();
+
   private:
     void read_next();
     void on_read(boost::beast::error_code ec);
@@ -71,6 +94,7 @@ class WsSearchSession : public std::enable_shared_from_this<WsSearchSession> {
     void enqueue(std::string message);
     void write_next();
     void on_written(boost::beast::error_code ec);
+    void begin_close();
 
     boost::beast::websocket::stream<boost::beast::tcp_stream> ws_;
     boost::beast::flat_buffer buffer_;
@@ -78,6 +102,7 @@ class WsSearchSession : public std::enable_shared_from_this<WsSearchSession> {
     std::deque<std::string> outgoing_; // Guarded by io_context (одночасно лише в потоці io)
     bool writing_ = false;
     bool busy_ = false; // пайплайн сесії ще виконується (FR-027, pipeline_busy)
+    bool close_requested_ = false; // зупинка сервера: нові кадри відкидаються (TCK-039)
 };
 
 } // namespace search::server

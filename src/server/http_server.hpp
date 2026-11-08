@@ -65,6 +65,8 @@ struct ServerOptions {
     std::function<index::IndexStats()> stats_provider;
 };
 
+class WsSessionRegistry;
+
 // Один запит на з'єднання (Connection: close). Keep-alive і паралелізм — у TCK-019.
 // Потокова умова: усі виклики (включно зі stop) мають відбуватися в потоці, що крутить io_context.
 class HttpServer {
@@ -72,8 +74,11 @@ class HttpServer {
     HttpServer(boost::asio::io_context &ioc, const ServerOptions &options);
 
     void start();
+    // Припиняє приймати з'єднання і закриває WS-сесії кодом 1001 (TCK-039). Викликати з io.
     void stop();
     std::uint16_t port() const;
+    // Кількість живих WS-сесій (для очікування завершення закриття при зупинці).
+    std::size_t open_ws_sessions();
 
   private:
     void do_accept();
@@ -81,6 +86,7 @@ class HttpServer {
     ServerOptions options_;
     std::shared_ptr<std::atomic<std::size_t>> active_sessions_ =
         std::make_shared<std::atomic<std::size_t>>(0);
+    std::shared_ptr<WsSessionRegistry> ws_registry_;
     boost::asio::ip::tcp::acceptor acceptor_;
     boost::asio::steady_timer retry_timer_;
 };

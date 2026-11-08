@@ -18,7 +18,8 @@ constexpr std::size_t kChunkSize = 32;
 
 std::unique_ptr<SharedInvertedIndex> build_index(const std::vector<Document> &documents,
                                                  std::size_t threads,
-                                                 const DocumentTokenizer &tokenizer) {
+                                                 const DocumentTokenizer &tokenizer,
+                                                 const std::atomic<bool> *cancel) {
     if (threads == 0) {
         throw std::invalid_argument("build_index: потрібен принаймні один потік");
     }
@@ -29,7 +30,11 @@ std::unique_ptr<SharedInvertedIndex> build_index(const std::vector<Document> &do
     std::vector<std::future<void>> chunks;
     for (std::size_t begin = 0; begin < documents.size(); begin += kChunkSize) {
         const std::size_t end = std::min(documents.size(), begin + kChunkSize);
-        chunks.push_back(workers.submit([&documents, &tokenizer, &index, begin, end] {
+        chunks.push_back(workers.submit([&documents, &tokenizer, &index, cancel, begin, end] {
+            // Скасування перевіряємо до роботи з порцією: індекс у такому разі не використовується.
+            if (cancel != nullptr && cancel->load()) {
+                return;
+            }
             for (std::size_t i = begin; i < end; ++i) {
                 const Document &doc = documents[i];
                 index->add_document(doc.doc_id, tokenizer(doc.text));
@@ -58,6 +63,9 @@ std::unique_ptr<SharedInvertedIndex> build_index(const std::vector<Document> &do
     }
     if (failed) {
         throw IndexBuildError("index_build_failed: " + first_error);
+    }
+    if (cancel != nullptr && cancel->load()) {
+        throw BuildCancelledError("build_cancelled");
     }
     return index;
 }

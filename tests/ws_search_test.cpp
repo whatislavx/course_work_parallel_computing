@@ -438,3 +438,17 @@ TEST_F(WsSearchTest, OversizedFrameClosesConnection) {
     ws->write(net::buffer(oversized));
     EXPECT_THROW(read_message(*ws), std::exception);
 }
+
+// TCK-039 (NFR-026): зупинка сервера закриває відкриту WS-сесію кодом 1001 (going away), а не
+// обривом з'єднання.
+TEST_F(WsSearchTest, ServerStopClosesOpenSessionsWithGoingAway) {
+    start(/*build=*/true);
+    auto ws = connect();
+    net::post(ioc_, [this] { server_->stop(); });
+
+    beast::flat_buffer buffer;
+    beast::error_code ec;
+    ws->read(buffer, ec);
+    EXPECT_EQ(ec, websocket::error::closed);
+    EXPECT_EQ(ws->reason().code, websocket::close_code::going_away);
+}
