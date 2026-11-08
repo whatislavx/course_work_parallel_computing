@@ -53,14 +53,17 @@ std::string make_snippet(std::string_view text, const std::vector<std::string> &
         if (!word_matches(word, terms)) {
             continue;
         }
-        // Фрагмент має містити саме слово з входженням: слово довше за ліміт не вміщуємо.
+        // Фрагмент має містити саме слово з входженням: слово довше за ліміт пропускаємо,
+        // а пошук продовжуємо з наступних слів.
         if (word.size() > max_chars) {
-            return {};
+            continue;
         }
-        const std::size_t end = utf8_safe_end(text, std::min(text.size(), start + max_chars));
+        // Ліміт не переповнює позицію: обмежуємо залишком тексту.
+        const std::size_t room = std::min(max_chars, text.size() - start);
+        const std::size_t end = utf8_safe_end(text, start + room);
         std::string_view fragment = text.substr(start, end - start);
-        // Обрізаємо до останнього пробілу, щоб не розірвати слово в кінці.
-        if (end < text.size()) {
+        // Обрізаємо до останнього пробілу лише якщо слово на межі не вміщується цілком.
+        if (end < text.size() && !is_space(text[end])) {
             const std::size_t cut = fragment.find_last_of(" \t\n\r\v\f");
             if (cut != std::string_view::npos && cut > 0) {
                 fragment = fragment.substr(0, cut);

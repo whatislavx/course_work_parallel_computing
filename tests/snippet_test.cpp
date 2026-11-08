@@ -40,6 +40,19 @@ TEST(Snippet, MatchedWordLongerThanLimitGivesEmptyString) {
     EXPECT_EQ(make_snippet("supercalifragilistic", {"supercalifragilistic"}, 5), "");
 }
 
+TEST(Snippet, OversizedFirstMatchDoesNotStopSearchForLaterMatches) {
+    EXPECT_EQ(make_snippet("supercalifragilistic alpha", {"supercalifragilistic", "alpha"}, 10),
+              "alpha");
+}
+
+TEST(Snippet, WordExactlyFillingLimitIsReturnedWhole) {
+    EXPECT_EQ(make_snippet("alpha bravo charlie", {"alpha"}, 11), "alpha bravo");
+}
+
+TEST(Snippet, HugeLimitDoesNotOverflowPosition) {
+    EXPECT_EQ(make_snippet("alpha bravo", {"alpha"}, static_cast<std::size_t>(-1)), "alpha bravo");
+}
+
 TEST(Snippet, DoesNotSplitUtf8Characters) {
     // «привіт» займає 12 байтів; обрізання на межі символу не дає невалідного UTF-8.
     const std::string text = "слово привіт світ";

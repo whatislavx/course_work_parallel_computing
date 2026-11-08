@@ -26,6 +26,25 @@ std::size_t SharedInvertedIndex::term_frequency(std::string_view term,
     return index_.term_frequency(term, doc_id);
 }
 
+RankingStatistics
+SharedInvertedIndex::ranking_statistics(const std::vector<std::string> &terms) const {
+    std::shared_lock lock(mutex_);
+    RankingStatistics stats;
+    stats.document_count = index_.document_count();
+    stats.terms.reserve(terms.size());
+    for (const std::string &term : terms) {
+        TermPostings entry{term, {}};
+        if (const std::vector<Posting> *list = index_.postings(term)) {
+            entry.docs.reserve(list->size());
+            for (const Posting &posting : *list) {
+                entry.docs.emplace_back(index_.doc_id(posting.doc_index), posting.term_frequency);
+            }
+        }
+        stats.terms.push_back(std::move(entry));
+    }
+    return stats;
+}
+
 std::vector<std::string> SharedInvertedIndex::documents_containing(std::string_view term) const {
     std::shared_lock lock(mutex_);
     std::vector<std::string> result;
