@@ -1,30 +1,114 @@
 # course_work_parallel_computing
 
-Containerized search system with a parallel inverted index, a custom thread pool, a thread-safe data structure, and LLM-based query expansion through Ollama. Coursework for «Паралельні обчислення», КПІ ім. Ігоря Сікорського, ІПСА.
+Контейнеризований пошуковий сервіс із паралельною побудовою інвертованого індексу, власним пулом потоків, власною потокобезпечною структурою даних і розширенням запиту через Ollama. Курсова робота з дисципліни «Паралельні обчислення», КПІ ім. Ігоря Сікорського, ІПСА.
 
-## Features
+## Можливості
 
-- Parallel inverted index build with a configurable number of threads
-- Concurrent client handling
-- Keyword search over REST
-- Query expansion through a local Ollama model
-- WebSocket streaming of pipeline stages
-- CLI client and Web UI
+- Паралельна побудова індексу з налюваною кількістю потоків (`POST /api/index`)
+- Пошук за ключовими словами (`POST /api/search`) і статистика (`GET /api/stats`)
+- Розширення запиту через локальну модель Ollama
+- Потокова передача етапів пайплайну через WebSocket (`/ws/search`)
+- Консольний клієнт `search` і Web UI
 
-## Quick start
+## Вимоги до середовища
 
-> To be completed when the stack is chosen. Target: `docker compose up`.
+- Docker і Docker Compose v2 (для запуску в контейнерах)
+- Для локальної збірки: CMake ≥ 3.20, компілятор із підтримкою C++20 (GCC 13 або Clang 17+), Boost 1.83 (Beast, JSON, Asio)
 
-## Project layout
+## Датасет
+
+Датасет не зберігається в Git. Джерело датасету ще не затверджено (OQ-01), тому інструкція розміщення буде додана після рішення. Шлях на хості задається змінною `DATASET_HOST_DIR` (за замовчуванням `./dataset`). Каталог монтується в контейнер сервера як `/data/docs` лише для читання.
+
+## Запуск через Docker Compose
+
+```bash
+cp .env.example .env          # за потреби змініть параметри
+docker compose up --build
+```
+
+Сервіси:
+
+| Сервіс         | Призначення                                         | Порт на хості |
+|----------------|-----------------------------------------------------|---------------|
+| `server`       | Пошуковий сервер (REST і WebSocket)                 | — (внутрішній, 8080) |
+| `ollama`       | Модель для розширення запиту                        | —             |
+| `ollama-model` | Одноразове завантаження моделі при старті           | —             |
+| `web`          | Web UI і проксі `/api`, `/ws/search` через nginx    | 8081          |
+
+Перевірка готовності сервера (через веб-проксі):
+
+```bash
+curl -s http://localhost:8081/api/health
+```
+
+Web UI відкривається на `http://localhost:8081/`.
+
+> Стан: конфігурацію compose написано, але повний запуск у цьому середовищі ще не перевірено (Docker-демон недоступний). Перевірка буде виконана в TCK-041.
+
+## Побудова індексу
+
+```bash
+curl -s -X POST http://localhost:8081/api/index \
+     -H 'Content-Type: application/json' \
+     -d '{"threads": 4}'
+```
+
+Відповідь містить `status`, `documents_indexed`, `time_ms`. Якщо тіло порожнє, використовується `DEFAULT_INDEX_THREADS`. Поки побудова триває, `GET /api/health` відповідає.
+
+## Пошук
+
+```bash
+curl -s -X POST http://localhost:8081/api/search \
+     -H 'Content-Type: application/json' \
+     -d '{"query": "parallel index", "mode": "keyword"}'
+```
+
+## CLI-клієнт
+
+Збірка локально (див. нижче) створює `build/src/search`:
+
+```bash
+SEARCH_SERVER_URL=http://localhost:8081 ./build/src/search "parallel index"
+./build/src/search --url http://localhost:8081 "parallel index"
+```
+
+Коди виходу: `0` — успіх (у т.ч. без результатів), `1` — сервер недоступний або повернув помилку, `2` — помилка аргументів.
+
+## Локальна збірка і тести
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+Тести Web UI (логіка клієнта) запускаються Node.js 22:
+
+```bash
+node --test web/test/app.test.mjs
+```
+
+Санітайзери: окремі збірки з `-fsanitize=thread` (TSan) і `-fsanitize=address,undefined` (ASan, UBSan). Бенчмарки будуються лише в Release; сценарії буде додано в `benchmarks/`.
+
+## Конфігурація
+
+Параметри читаються з змінних середовища; значення за замовчуванням і їх обмеження — у `src/config/config.hpp`. Приклад — у `.env.example`. Частина значень тимчасова до затвердження (позначено в коді). Секретів у репозиторії немає.
+
+## Структура репозиторію
 
 ```
-.claude/rules/   Working rules for development, architecture, code, tests, git
-docs/            Requirements, architecture, API contract, development plan
-src/             Backend source
-tests/           Automated tests
-benchmarks/      Scripts that reproduce the scalability study
-scripts/         Helper scripts (formatting, dataset preparation)
-docker-compose.yml
+src/           Бекенд: індекс, пул потоків, HTTP і WebSocket, Ollama, CLI
+tests/         Автоматизовані тести і тестові фікстури
+web/           Web UI (статика) і конфігурація nginx-проксі
+docker/        Dockerfile сервера і скрипт завантаження моделі Ollama
+benchmarks/    Скрипти відтворюваних вимірювань (буде додано)
+docs/          Вимоги, специфікація, архітектура, API, план розробки
 ```
 
-Start with `docs/requirements/` and `docs/development/tasks.md`.
+Починати з `docs/requirements/` і `docs/development/tasks.md`.
+
+## Відомі обмеження
+
+- Датасет і його джерело ще не затверджено (OQ-01).
+- Бенчмарки, пояснювальна записка і фінальні UML-діаграми ще не створені.
+- Тайм-аут клієнта для побудови індексу в конфігурації ще не реалізовано (`INDEX_REQUEST_TIMEOUT_MS`).
