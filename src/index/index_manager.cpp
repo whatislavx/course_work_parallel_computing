@@ -7,6 +7,7 @@
 #include <exception>
 #include <memory>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
 namespace search::index {
@@ -24,10 +25,14 @@ bool IndexManager::start_build(std::filesystem::path dataset_dir, std::size_t th
         if (building_) {
             return false;
         }
+        // Виклик із власного on_done: приєднання потоку самого себе призвело б до помилки.
+        if (builder_.joinable() && builder_.get_id() == std::this_thread::get_id()) {
+            throw std::logic_error("start_build: виклик із callback побудови заборонено");
+        }
         building_ = true;
         state_ = active_ ? IndexState::Rebuilding : IndexState::Building;
-        // Потік попередньої побудови вже завершив роботу (building_ був false), його лише
-        // приєднуємо. builder_ змінюється тільки під замком.
+        // Потік попередньої побудови вже вийшов з побудови (building_ був false); його
+        // приєднуємо поза замком. builder_ змінюється тільки під замком.
         previous = std::move(builder_);
         try {
             builder_ = std::thread(
@@ -35,9 +40,12 @@ bool IndexManager::start_build(std::filesystem::path dataset_dir, std::size_t th
                     run_build(dir, threads, std::move(done));
                 });
         } catch (...) {
-            // Не вдалося створити потік: скидаємо стан, щоб не застрягнути в Building.
+            // Не вдалося створити потік: повертаємо попередній потік і стан, щоб не
+            // застрягнути в Building і не втратити потік для приєднання.
+            builder_ = std::move(previous);
             building_ = false;
             state_ = active_ ? IndexState::Ready : IndexState::Empty;
+            idle_cv_.notify_all();
             throw;
         }
     }
@@ -58,7 +66,10 @@ void IndexManager::wait_for_build_thread() {
     }
 }
 
-void IndexManager::wait_for_build() { wait_for_build_thread(); }
+void IndexManager::wait_for_build() {
+    std::unique_lock lock(mutex_);
+    idle_cv_.wait(lock, [this] { return !building_; });
+}
 
 void IndexManager::run_build(std::filesystem::path dataset_dir, std::size_t threads,
                              BuildCallback on_done) {
@@ -70,7 +81,6 @@ void IndexManager::run_build(std::filesystem::path dataset_dir, std::size_t thre
         const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - started);
 
-        result.ok = true;
         result.stats.documents = discovery.documents.size();
         result.stats.index_build_time_ms = static_cast<std::uint64_t>(elapsed.count());
         result.stats.threads_used = threads;
@@ -83,6 +93,8 @@ void IndexManager::run_build(std::filesystem::path dataset_dir, std::size_t thre
         last_error_.reset();
         state_ = IndexState::Ready;
         building_ = false;
+        result.ok = true;
+        idle_cv_.notify_all();
     } catch (const DatasetError &e) {
         result.error_code = "dataset_unavailable";
         result.error_message = e.what();
@@ -101,17 +113,24 @@ void IndexManager::run_build(std::filesystem::path dataset_dir, std::size_t thre
         result.error_message = "unknown error";
         finish_build(result);
     }
+    // Виняток з callback не має вийти з робочого потоку (std::terminate).
     if (on_done) {
-        on_done(result);
+        try {
+            on_done(result);
+        } catch (...) {
+            // Немає куди повідомити: відповідь клієнту вже не можна надіслати.
+        }
     }
 }
 
 void IndexManager::finish_build(const BuildResult &result) {
     std::lock_guard lock(mutex_);
-    last_error_ = result.error_message;
+    // Стан скидаємо першим: якщо присвоєння рядка кине виняток, building_ не лишиться true.
     // Збій не чіпає активний індекс: повертаємося до стану, що був до побудови.
     state_ = active_ ? IndexState::Ready : IndexState::Empty;
     building_ = false;
+    idle_cv_.notify_all();
+    last_error_ = result.error_message;
 }
 
 IndexState IndexManager::state() const {

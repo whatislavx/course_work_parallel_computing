@@ -2,7 +2,9 @@
 
 #include <boost/json.hpp>
 
+#include <cstdint>
 #include <string>
+#include <string_view>
 #include <variant>
 
 namespace search::server {

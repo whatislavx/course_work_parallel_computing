@@ -2,10 +2,14 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -129,4 +133,48 @@ TEST(IndexManager, EmptyDatasetBuildsZeroDocuments) {
 TEST(IndexManager, ZeroThreadsIsRejected) {
     IndexManager manager;
     EXPECT_THROW(static_cast<void>(manager.start_build(".", 0)), std::invalid_argument);
+}
+
+// Регресія рев'ю TCK-013: виняток з callback не має виходити з потоку побудови.
+TEST(IndexManagerReviewFixes, CallbackExceptionDoesNotTerminateProcess) {
+    const auto dir = std::filesystem::temp_directory_path() / "index_manager_cb_throw";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    { std::ofstream(dir / "a.txt") << "alpha beta\n"; }
+
+    search::index::IndexManager manager;
+    std::atomic<bool> called{false};
+    ASSERT_TRUE(manager.start_build(dir, 1, [&called](const search::index::BuildResult &) {
+        called = true;
+        throw std::runtime_error("callback failure");
+    }));
+    manager.wait_for_build();
+    // Процес живий: стан коректний і побудова відбулася.
+    EXPECT_EQ(manager.state(), search::index::IndexState::Ready);
+    std::filesystem::remove_all(dir);
+}
+
+// Регресія: start_build із власного callback заборонено явним винятком, а не deadlock.
+TEST(IndexManagerReviewFixes, StartBuildFromOwnCallbackThrowsLogicError) {
+    const auto dir = std::filesystem::temp_directory_path() / "index_manager_reentrant";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    { std::ofstream(dir / "a.txt") << "alpha\n"; }
+
+    search::index::IndexManager manager;
+    std::atomic<bool> threw{false};
+    ASSERT_TRUE(manager.start_build(dir, 1, [&](const search::index::BuildResult &) {
+        try {
+            manager.start_build(dir, 1);
+        } catch (const std::logic_error &) {
+            threw = true;
+        }
+    }));
+    manager.wait_for_build();
+    // wait_for_build повертається, коли building_ скинуто; callback може ще виконуватися.
+    for (int i = 0; i < 500 && !threw.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(threw.load());
+    std::filesystem::remove_all(dir);
 }
