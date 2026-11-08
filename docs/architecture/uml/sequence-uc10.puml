@@ -1,13 +1,24 @@
 @startuml sequence-uc10
-title Масштабованість побудови (UC-10)
+title Бенчмарк побудови індексу (UC-10)
 participant "Дослідник" as BEN
 participant "Скрипт бенчмарку" as Bench
 participant "Пошуковий сервер" as Srv
 BEN -> Bench : запуск бенчмарку
-Bench -> Srv : GET /api/health (E1: вимірювання не стартує)
-Bench -> Bench : фіксація параметрів середовища
-Bench -> Srv : для кожного p: прогрів і R повторів UC-03 з threads=p
-Srv --> Bench : результат (A1: вимір позначено невдалим)
-Bench -> Bench : медіана, min/max, S(p), E(p), пікова пам'ять
-Bench --> BEN : таблиця і графік
+Bench -> Srv : GET /api/health
+alt сервер недоступний (E1)
+  Bench --> BEN : вимірювання не стартує
+else сервер доступний
+  Bench -> Bench : фіксація параметрів середовища
+  loop для кожного p
+    Bench -> Srv : прогрів і R повторів UC-03 з threads=p
+    alt повтор завершився помилкою (A1)
+      Srv --> Bench : помилка
+      Bench -> Bench : вимір позначено невдалим
+    else успішно
+      Srv --> Bench : результат
+    end
+  end
+  Bench -> Bench : медіана, min/max, S(p), E(p), пікова пам'ять
+  Bench --> BEN : таблиця і графік
+end
 @enduml

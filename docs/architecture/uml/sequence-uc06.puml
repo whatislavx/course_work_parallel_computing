@@ -1,15 +1,31 @@
 @startuml sequence-uc06
-title Пошук із потоковою передачею етапів (UC-06)
+title Пайплайн WebSocket /ws/search (UC-06)
 participant "WS-клієнт" as WS
 participant "Пошуковий сервер" as Srv
 participant "Ollama" as Ollama
 WS -> Srv : WS connect /ws/search
 WS -> Srv : {query}
-Srv -> Srv : валідація; перевірка індексу (E1: error invalid; E2: error index_not_ready)
-Srv -> Ollama : UC-09: розширення запиту з тайм-аутом (A1: expanded_terms=[])
-Srv --> WS : query_expansion {original, expanded_terms}
-Srv -> Srv : пошук за термами та розширеними термами
-Srv --> WS : keyword_search {results, time_ms}
-Srv --> WS : done
-WS -> Srv : новий запит або закриття (E4: pipeline_busy)
+Srv -> Srv : валідація запиту
+alt некоректне повідомлення (E1)
+  Srv --> WS : error invalid_query або invalid_json
+else запит коректний
+  alt індекс не готовий (E2)
+    Srv --> WS : error index_not_ready
+  else індекс готовий
+    Srv -> Ollama : UC-09: розширення запиту з тайм-аутом
+    alt розширення успішне
+      Ollama --> Srv : expanded_terms
+    else збій або тайм-аут (A1)
+      Srv -> Srv : expanded_terms = []
+    end
+    Srv --> WS : query_expansion {original, expanded_terms}
+    Srv -> Srv : пошук за термами та розширеними термами
+    Srv --> WS : keyword_search {results, time_ms}
+    Srv --> WS : done
+    opt клієнт надсилає наступний запит до done (E4)
+      WS -> Srv : {query}
+      Srv --> WS : error pipeline_busy
+    end
+  end
+end
 @enduml

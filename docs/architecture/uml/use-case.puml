@@ -1,6 +1,6 @@
 @startuml use-case
 left to right direction
-title Діаграма варіантів використання (DEL-03)
+title Діаграма варіантів використання (DEL-03; web-контейнер і provisioning моделі у UC-01)
 actor "Оператор" as OPS
 actor "API-клієнт" as API
 actor "Користувач CLI" as CLI
@@ -8,6 +8,8 @@ actor "Користувач Web UI" as USR
 actor "Дослідник" as BEN
 actor "Ollama" as OLL <<система>>
 actor "Файлова система" as FS <<система>>
+actor "Docker Compose" as DC <<система>>
+actor "Web-контейнер (nginx)" as WEB <<система>>
 rectangle "Пошуковий сервіс" {
   usecase "UC-01 Запустити систему" as UC01
   usecase "UC-02 Перевірити стан" as UC02
@@ -27,6 +29,8 @@ OPS --> UC02
 OPS --> UC03
 OPS --> UC04
 OPS --> UC12
+DC --> UC01 : запускає сервіси, provisioning моделі
+WEB --> UC08 : віддає статичний UI і проксіює /api, /ws/search
 API --> UC02
 API --> UC03
 API --> UC04
@@ -44,5 +48,6 @@ UC10 ..> UC03 : <<include>>
 UC11 ..> UC05 : <<include>>
 note right of UC11 : Або UC-06 (OQ-17, не вирішено)
 UC09 --> OLL
+UC01 --> OLL : завантаження моделі (ollama-model)
 UC03 --> FS
 @enduml

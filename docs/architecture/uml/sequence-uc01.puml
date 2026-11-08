@@ -8,9 +8,13 @@ OPS -> Compose : docker compose up
 Compose -> Ollama : запуск сервісу Ollama
 Compose -> Srv : запуск після готовності Ollama
 Srv -> Srv : читання і валідація конфігурації
-Srv --> Compose : помилка конфігурації: код ≠ 0 (E1)
-Srv -> Srv : прийом HTTP і WebSocket
-Srv -> Ollama : завантаження моделі (A1: ollama=false до готовності)
-OPS -> Srv : GET /api/health
-Srv --> OPS : 200, ollama: true
+alt конфігурація коректна
+  Srv -> Srv : прийом HTTP і WebSocket
+  Srv -> Ollama : завантаження моделі
+  note right: A1: ollama=false до готовності моделі
+  OPS -> Srv : GET /api/health
+  Srv --> OPS : 200, ollama: true
+else помилка конфігурації (E1)
+  Srv --> Compose : код ≠ 0, процес завершується
+end
 @enduml

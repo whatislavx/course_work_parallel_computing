@@ -53,9 +53,9 @@
 | ID | Опис | Статус |
 |---|---|---|
 | BL-27 | `docker-compose.yml` не передавав `.env` у сервер | Закрито: `env_file` з `required: false` (ADR-004), `docker compose config` пройдено |
-| BL-28 | Послідовності UC-01…UC-12: альтернативні потоки і винятки намальовано безумовними кроками; потрібні `alt/else` і `opt` | Відкрито |
-| BL-29 | `class.puml` не збігається з `07-domain-model.md` §1: немає `SearchResponse`, частини атрибутів, зв'язки композиції; `ExpandedQuery ..> OllamaClient` суперечить architecture.md §4 | Відкрито |
-| BL-30 | Послідовність UC-01 не показує web-контейнер і спосіб завантаження моделі (`ollama-model`, OQ-13) | Відкрито |
+| BL-28 | Послідовності UC-01…UC-12: альтернативні потоки і винятки намальовано безумовними кроками; потрібні `alt/else` і `opt` | Закрито: alt/else, opt, loop і par у UC-01…UC-12 |
+| BL-29 | `class.puml` не збігається з `07-domain-model.md` §1: немає `SearchResponse`, частини атрибутів, зв'язки композиції; `ExpandedQuery ..> OllamaClient` суперечить architecture.md §4 | Закрито: class.puml синхронізовано з 07 §1 (SearchResponse, зв'язки, без залежності ядра від OllamaClient) |
+| BL-30 | Послідовність UC-01 не показує web-контейнер і спосіб завантаження моделі (`ollama-model`, OQ-13) | Закрито: web-контейнер, Docker Compose і provisioning моделі в use-case.puml |
 | BL-31 | Коміт c761ebd заявляє покриття NFR-010/BDD-HLT-03, а тест використовує заглушку побудови; TEST-API-13 має бути «Partially verified» | Відкрито (історію не переписую) |
 | BL-32 | Тип `style` дозволено в `check_commits.sh`, хоча в git.md §4 його немає | Залишено (ADR-004); додати в git.md — за власником |
 

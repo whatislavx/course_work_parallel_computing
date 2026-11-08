@@ -5,13 +5,29 @@ participant "Пошуковий сервер" as Srv
 participant "Пул потоків" as Pool
 participant "Датасет" as FS
 ACT -> Srv : POST /api/index {threads}
-Srv -> Srv : валідація; стан «побудова триває»
-Srv --> ACT : 409 index_build_in_progress (E2)
-Srv -> FS : перелік документів (E3: 500 dataset_unavailable)
-Srv -> Pool : submit(задачі індексації) для p потоків
-Pool -> FS : читання документа (A2: пропуск із записом у лозі)
-Pool -> Pool : токенізація і вставка постингів у новий індекс
-Pool --> Srv : усі задачі завершено (E4: 500 index_build_failed)
-Srv -> Srv : атомарна активація індексу; оновлення статистики
-Srv --> ACT : 200 {status, documents_indexed, time_ms}
+Srv -> Srv : валідація threads
+alt побудова вже триває (E2)
+  Srv --> ACT : 409 index_build_in_progress
+else побудова може стартувати
+  Srv -> FS : перелік документів
+  alt каталог недоступний (E3)
+    Srv --> ACT : 500 dataset_unavailable
+  else документи знайдено
+    Srv -> Pool : submit(задачі індексації) для p потоків
+    loop для кожного документа
+      Pool -> FS : читання документа
+      opt документ не читається (A2)
+        Pool -> Pool : пропуск із записом у лозі
+      end
+      Pool -> Pool : токенізація і вставка постингів у новий індекс
+    end
+    Pool --> Srv : усі задачі завершено
+    alt задача завершилась винятком (E4)
+      Srv --> ACT : 500 index_build_failed
+    else успішно
+      Srv -> Srv : атомарна активація індексу; оновлення статистики
+      Srv --> ACT : 200 {status, documents_indexed, time_ms}
+    end
+  end
+end
 @enduml
