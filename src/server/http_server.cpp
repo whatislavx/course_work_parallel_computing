@@ -1,5 +1,7 @@
 #include "server/http_server.hpp"
 
+#include "server/ws_search_session.hpp"
+
 #include "query/search_service.hpp"
 #include "server/router.hpp"
 
@@ -38,10 +40,14 @@ class Session : public std::enable_shared_from_this<Session> {
           max_index_threads_(options.max_index_threads), stats_provider_(options.stats_provider),
           search_handler_(options.search_handler), expansion_handler_(options.expansion_handler),
           max_query_length_(options.max_query_length), search_executor_(options.search_executor),
-          max_connections_(options.max_concurrent_connections),
+          index_ready_(options.index_ready), max_connections_(options.max_concurrent_connections),
           active_sessions_(std::move(active_sessions)) {}
 
-    ~Session() { active_sessions_->fetch_sub(1); }
+    ~Session() {
+        if (owns_count_) {
+            active_sessions_->fetch_sub(1);
+        }
+    }
 
     void start() {
         active_sessions_->fetch_add(1);
@@ -82,12 +88,25 @@ class Session : public std::enable_shared_from_this<Session> {
                                 "too many concurrent connections"));
             return;
         }
+        if (is_ws_search_request(parser_.get())) {
+            start_ws_search();
+            return;
+        }
         if (is_health_request(parser_.get()) && ollama_check_) {
             ollama_check_(
                 [self = shared_from_this()](bool available) { self->dispatch(available); });
             return;
         }
         dispatch(false);
+    }
+
+    // WS /ws/search (TCK-022): сокет і лічильник з'єднань переходять до WsSearchSession.
+    void start_ws_search() {
+        owns_count_ = false;
+        WsSearchDeps deps{expansion_handler_, search_handler_,   search_executor_,
+                          index_ready_,       max_query_length_, active_sessions_};
+        auto session = std::make_shared<WsSearchSession>(std::move(stream_), std::move(deps));
+        session->start(parser_.release());
     }
 
     void dispatch(bool ollama_available) {
@@ -224,17 +243,16 @@ class Session : public std::enable_shared_from_this<Session> {
         }
         // Пошук у пулі; результат повертаємо в io_context через post. Сесія тримається живою
         // копією self, доки відповідь не надіслано.
-        search_executor_(
-            [self = shared_from_this(), handler = search_handler_, text, extra_terms]() mutable {
-                Response response = run_search(handler, text, extra_terms);
-                // Передаємо володіння сесією в io_context: після post копія в задачі пулу порожня,
-                // і ~Session виконується лише в потоці io_context, а не в робочому потоці пулу.
-                auto executor = self->stream_.get_executor();
-                net::post(executor, [self = std::move(self),
-                                     response = std::move(response)]() mutable {
-                    self->send(std::move(response));
-                });
+        search_executor_([self = shared_from_this(), handler = search_handler_, text,
+                          extra_terms]() mutable {
+            Response response = run_search(handler, text, extra_terms);
+            // Передаємо володіння сесією в io_context: після post копія в задачі пулу порожня,
+            // і ~Session виконується лише в потоці io_context, а не в робочому потоці пулу.
+            auto executor = self->stream_.get_executor();
+            net::post(executor, [self = std::move(self), response = std::move(response)]() mutable {
+                self->send(std::move(response));
             });
+        });
     }
 
     // Виконує пошук і формує відповідь. Винятки не виходять назовні.
@@ -364,8 +382,10 @@ class Session : public std::enable_shared_from_this<Session> {
     ExpansionHandler expansion_handler_;
     std::size_t max_query_length_;
     SearchExecutor search_executor_;
+    std::function<bool()> index_ready_;
     std::size_t max_connections_;
     std::shared_ptr<std::atomic<std::size_t>> active_sessions_;
+    bool owns_count_ = true; // false після передачі з'єднання WebSocket-сесії
     std::array<char, 4096> scratch_{};
     std::size_t drained_ = 0;
 };

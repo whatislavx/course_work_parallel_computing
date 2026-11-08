@@ -47,6 +47,12 @@ int main() {
         search::pool::ThreadPool search_pool(search_threads, cfg.max_concurrent_connections);
 
         search::server::ServerOptions options;
+        // WS /ws/search перевіряє індекс до виклику Ollama (06 §4.2).
+        options.index_ready = [&index_manager] {
+            const auto state = index_manager.state();
+            return state == search::index::IndexState::Ready ||
+                   state == search::index::IndexState::Rebuilding;
+        };
         options.port = cfg.port;
         options.max_request_body_bytes = cfg.max_request_body_bytes;
         options.request_timeout = std::chrono::milliseconds(cfg.request_timeout_ms);
