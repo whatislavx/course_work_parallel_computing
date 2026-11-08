@@ -7,10 +7,12 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/steady_timer.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -33,6 +35,10 @@ using SearchHandler = std::function<std::vector<query::SearchHit>(
 using ExpansionHandler =
     std::function<void(std::string query, std::function<void(std::vector<std::string>)> done)>;
 
+// Виконавець важкої роботи (пошук) поза потоком io_context. Задача сама повертає результат
+// через io_context (post). Порожньо = виконувати в потоці io_context.
+using SearchExecutor = std::function<void(std::function<void()> task)>;
+
 struct ServerOptions {
     std::uint16_t port = 8080; // 0 — операційна система обирає порт (для тестів)
     std::size_t max_request_body_bytes = 1 << 20;
@@ -47,6 +53,10 @@ struct ServerOptions {
     // EP-03: порожньо = 500 internal_error.
     SearchHandler search_handler;
     ExpansionHandler expansion_handler; // порожньо = розширення вимкнено (лише keyword)
+    SearchExecutor search_executor; // пул пошуку (TCK-019)
+    // Ліміт одночасних HTTP-з'єднань (OQ-35, плейсхолдер). Понад ліміт — 503 server_busy,
+    // крім GET /api/health (FR-001).
+    std::size_t max_concurrent_connections = 64;
     std::size_t max_query_length = 256; // MAX_QUERY_LENGTH
 
     // EP-04: статистика активного індексу. Порожньо = нулі (до першої побудови).
@@ -67,6 +77,8 @@ class HttpServer {
     void do_accept();
 
     ServerOptions options_;
+    std::shared_ptr<std::atomic<std::size_t>> active_sessions_ =
+        std::make_shared<std::atomic<std::size_t>>(0);
     boost::asio::ip::tcp::acceptor acceptor_;
     boost::asio::steady_timer retry_timer_;
 };

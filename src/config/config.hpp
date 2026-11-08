@@ -39,6 +39,9 @@ struct Config {
     // Розширення (OQ-14): значення тимчасові, до затвердження.
     std::size_t ollama_timeout_ms = 5000; // OLLAMA_TIMEOUT_MS
     std::size_t max_expanded_terms = 5;   // MAX_EXPANDED_TERMS
+    // Паралелізм (TCK-019, OQ-35): значення тимчасові.
+    std::size_t search_worker_threads = 0; // SEARCH_WORKER_THREADS; 0 = логічні процесори
+    std::size_t max_concurrent_connections = 64; // MAX_CONCURRENT_CONNECTIONS
 };
 
 // Розбирає і валідує конфігурацію з довільного джерела (для тестів і для оточення).
