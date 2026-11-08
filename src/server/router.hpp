@@ -2,7 +2,9 @@
 
 #include <boost/beast/http.hpp>
 
+#include <cstddef>
 #include <string_view>
+#include <variant>
 
 namespace search::server {
 
@@ -15,6 +17,14 @@ Response error_response(boost::beast::http::status status, std::string_view code
 
 // Чи є запит GET /api/health (його статус Ollama перевіряється асинхронно).
 bool is_health_request(const Request &request);
+
+// Чи є запит POST /api/index (його тіло читає сесія, а відповідь відкладається до кінця побудови).
+bool is_index_request(const Request &request);
+
+// Розбирає тіло EP-02. Повертає кількість потоків або готову відповідь 400.
+// Порожнє тіло чи відсутнє поле threads → default_threads.
+std::variant<std::size_t, Response>
+parse_index_body(std::string_view body, std::size_t default_threads, std::size_t max_threads);
 
 // Маршрутизація за шляхом і методом (06 §2.3). ollama_available — результат перевірки Ollama
 // для EP-01; для інших ендпоінтів не використовується. Розмір тіла перевіряє сесія.

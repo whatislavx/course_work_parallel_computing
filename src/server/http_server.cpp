@@ -4,12 +4,15 @@
 
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
+#include <boost/json.hpp>
 
 #include <array>
 #include <cstddef>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <utility>
+#include <variant>
 
 namespace search::server {
 namespace {
@@ -26,7 +29,9 @@ class Session : public std::enable_shared_from_this<Session> {
   public:
     Session(tcp::socket socket, const ServerOptions &options)
         : stream_(std::move(socket)), max_body_bytes_(options.max_request_body_bytes),
-          timeout_(options.request_timeout), ollama_check_(options.ollama_check) {}
+          timeout_(options.request_timeout), ollama_check_(options.ollama_check),
+          index_start_(options.index_start), default_index_threads_(options.default_index_threads),
+          max_index_threads_(options.max_index_threads) {}
 
     void start() { read_header(); }
 
@@ -60,6 +65,10 @@ class Session : public std::enable_shared_from_this<Session> {
     }
 
     void dispatch(bool ollama_available) {
+        if (is_index_request(parser_.get())) {
+            read_index_body();
+            return;
+        }
         Response response = route(parser_.get(), ollama_available);
         if (response.result() != http::status::not_implemented) {
             // 200, 404, 405: тіло запиту не читаємо.
@@ -83,6 +92,76 @@ class Session : public std::enable_shared_from_this<Session> {
                          });
     }
 
+    // EP-02: тіло читаємо з тим самим лімітом; відповідь відкладаємо до кінця побудови.
+    void read_index_body() {
+        const auto length = parser_.content_length();
+        if (length && *length > max_body_bytes_) {
+            send(payload_too_large());
+            return;
+        }
+        parser_.body_limit(max_body_bytes_);
+        stream_.expires_after(timeout_);
+        http::async_read(stream_, buffer_, parser_,
+                         [self = shared_from_this()](beast::error_code body_ec, std::size_t) {
+                             self->on_index_body(body_ec);
+                         });
+    }
+
+    void on_index_body(beast::error_code ec) {
+        if (ec == http::error::body_limit) {
+            send(payload_too_large());
+            return;
+        }
+        if (ec) {
+            close();
+            return;
+        }
+        auto parsed =
+            parse_index_body(parser_.get().body(), default_index_threads_, max_index_threads_);
+        if (std::holds_alternative<Response>(parsed)) {
+            send(std::get<Response>(std::move(parsed)));
+            return;
+        }
+        start_index_build(std::get<std::size_t>(parsed));
+    }
+
+    // Callback побудови викликається з робочого потоку менеджера. Відповідь пишеться лише
+    // в потоці io_context: через net::post до виконавця сокета.
+    void start_index_build(std::size_t threads) {
+        if (!index_start_) {
+            send(error_response(http::status::internal_server_error, "internal_error",
+                                "index endpoint is not configured"));
+            return;
+        }
+        bool started = false;
+        try {
+            started = index_start_(
+                threads, [self = shared_from_this()](const index::BuildResult &result) {
+                    net::post(self->stream_.get_executor(),
+                              [self, result]() { self->finish_index_build(result); });
+                });
+        } catch (const std::exception &e) {
+            send(error_response(http::status::internal_server_error, "internal_error", e.what()));
+            return;
+        }
+        if (!started) {
+            send(error_response(http::status::conflict, "index_build_in_progress",
+                                "index build is already running"));
+        }
+    }
+
+    void finish_index_build(const index::BuildResult &result) {
+        if (result.ok) {
+            boost::json::object body{{"status", "ok"},
+                                     {"documents_indexed", result.stats.documents},
+                                     {"time_ms", result.stats.index_build_time_ms}};
+            send(json_body(http::status::ok, boost::json::serialize(body)));
+            return;
+        }
+        send(error_response(http::status::internal_server_error, result.error_code,
+                            result.error_message));
+    }
+
     void on_body(beast::error_code ec) {
         if (ec == http::error::body_limit) {
             send(payload_too_large());
@@ -93,6 +172,14 @@ class Session : public std::enable_shared_from_this<Session> {
             return;
         }
         send(route(parser_.get(), false));
+    }
+
+    static Response json_body(http::status status, std::string body) {
+        Response res{status, 11};
+        res.set(http::field::server, "search-engine");
+        res.set(http::field::content_type, "application/json; charset=utf-8");
+        res.body() = std::move(body);
+        return res;
     }
 
     static Response payload_too_large() {
@@ -143,6 +230,9 @@ class Session : public std::enable_shared_from_this<Session> {
     std::size_t max_body_bytes_;
     std::chrono::milliseconds timeout_;
     OllamaCheck ollama_check_;
+    IndexStarter index_start_;
+    std::size_t default_index_threads_;
+    std::size_t max_index_threads_;
     std::array<char, 4096> scratch_{};
     std::size_t drained_ = 0;
 };

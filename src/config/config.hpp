@@ -25,6 +25,7 @@ struct Config {
     std::uint16_t port = 8080; // SERVER_PORT
     std::string dataset_dir;   // DATASET_DIR; порожньо = не задано (OQ-01)
     std::size_t default_index_threads = 0; // DEFAULT_INDEX_THREADS; 0 = логічні процесори (OQ-07)
+    std::size_t max_index_threads = 64; // MAX_INDEX_THREADS (OQ-07, тимчасове значення)
     std::size_t max_request_body_bytes = 1 << 20; // MAX_REQUEST_BODY_BYTES; тимчасово 1 МіБ (OQ-27)
     std::size_t health_check_timeout_ms = 2000; // HEALTH_CHECK_TIMEOUT_MS; тимчасово (OQ-14)
     std::size_t request_timeout_ms =
