@@ -15,6 +15,7 @@ add_library(search_core STATIC
     pool/thread_pool.cpp
     server/http_server.cpp
     server/router.cpp
+    search/ranking.cpp
     ollama/endpoint.cpp
     ollama/probe.cpp
 )
