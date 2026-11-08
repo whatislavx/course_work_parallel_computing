@@ -90,7 +90,9 @@ function runSearch(query) {
   socket.addEventListener('message', (message) => {
     const event = JSON.parse(message.data);
     const model = classifyStage(event);
-    if (model.type === 'results') {
+    if (model.type === 'expansion') {
+      render({ status: 'Розширення запиту…' });
+    } else if (model.type === 'results') {
       received = true;
       render({ status: model.empty ? 'Нічого не знайдено.' : '', items: model.items });
     } else if (model.type === 'error') {

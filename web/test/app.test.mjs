@@ -50,3 +50,12 @@ test('query_expansion exposes expanded terms; unknown stages are ignored', () =>
   assert.equal(classifyStage({ stage: 'whatever' }).type, 'unknown');
   assert.equal(classifyStage({ stage: 'done' }).type, 'done');
 });
+
+test('done without data is accepted as completion (BDD-WEB-04)', () => {
+  assert.deepEqual(classifyStage({ stage: 'done' }), { type: 'done' });
+  assert.deepEqual(classifyStage({ stage: 'done', data: {} }), { type: 'done' });
+});
+
+test('query_expansion is classified as an expansion stage, not as results', () => {
+  assert.equal(classifyStage({ stage: 'query_expansion', data: {} }).type, 'expansion');
+});
