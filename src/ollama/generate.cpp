@@ -212,4 +212,21 @@ void generate(net::io_context &ioc, Endpoint endpoint, std::string prompt,
         ->run(timeout);
 }
 
+ExpansionFunction make_expansion_handler(net::io_context &ioc, Endpoint endpoint,
+                                         std::chrono::milliseconds timeout, std::size_t max_terms) {
+    return [&ioc, endpoint = std::move(endpoint), timeout, max_terms](std::string query,
+                                                                      ExpansionDone done) {
+        const std::vector<std::string> query_terms = index::tokenize(query);
+        generate(
+            ioc, endpoint, build_expansion_prompt(query, max_terms), timeout,
+            [query_terms, max_terms, done = std::move(done)](std::optional<std::string> response) {
+                if (!response) {
+                    done({});
+                    return;
+                }
+                done(parse_expansion_terms(*response, query_terms, max_terms));
+            });
+    };
+}
+
 } // namespace search::ollama
