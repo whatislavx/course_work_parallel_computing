@@ -128,9 +128,9 @@ TEST_F(HttpServerTest, UnknownPathWithOversizedBodyStillReturns404) {
 }
 
 TEST_F(HttpServerTest, BodyAtLimitIsAccepted) {
+    // Тіло рівно на ліміті не відхиляється з 413; /api/search реалізовано, тому 400 invalid_json.
     const std::string exact(kLimit, 'x');
-    EXPECT_EQ(request(http::verb::post, "/api/search", exact).result(),
-              http::status::not_implemented);
+    EXPECT_EQ(request(http::verb::post, "/api/search", exact).result(), http::status::bad_request);
 }
 
 TEST_F(HttpServerTest, BodyOneByteOverLimitReturnsPayloadTooLarge) {

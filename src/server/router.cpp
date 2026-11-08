@@ -24,7 +24,7 @@ struct Route {
 constexpr Route kRoutes[] = {
     {"/api/health", bh::verb::get, true},
     {"/api/index", bh::verb::post, true},
-    {"/api/search", bh::verb::post, false},
+    {"/api/search", bh::verb::post, true},
     {"/api/stats", bh::verb::get, true},
 };
 
@@ -63,6 +63,62 @@ Response stats_response(const index::IndexStats &stats) {
     boost::json::object body{{"documents", stats.documents},
                              {"index_build_time_ms", stats.index_build_time_ms},
                              {"threads_used", stats.threads_used}};
+    return json_response(bh::status::ok, boost::json::serialize(body));
+}
+
+bool is_search_request(const Request &request) {
+    return path_of(request.target()) == "/api/search" && request.method() == bh::verb::post;
+}
+
+std::variant<SearchRequest, Response> parse_search_body(std::string_view body,
+                                                        std::size_t max_query_length) {
+    boost::system::error_code ec;
+    boost::json::value parsed = boost::json::parse(body, ec);
+    if (ec || !parsed.is_object()) {
+        return error_response(bh::status::bad_request, "invalid_json",
+                              "request body must be a JSON object");
+    }
+    const boost::json::object &object = parsed.as_object();
+
+    const auto query_field = object.find("query");
+    if (query_field == object.end() || !query_field->value().is_string()) {
+        return error_response(bh::status::bad_request, "invalid_query", "query must be a string");
+    }
+    const std::string_view raw = query_field->value().as_string();
+    const std::size_t first = raw.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos) {
+        return error_response(bh::status::bad_request, "invalid_query", "query must not be empty");
+    }
+    const std::size_t last = raw.find_last_not_of(" \t\r\n");
+    const std::string_view trimmed = raw.substr(first, last - first + 1);
+    if (trimmed.size() > max_query_length) {
+        return error_response(bh::status::bad_request, "invalid_query",
+                              "query exceeds MAX_QUERY_LENGTH");
+    }
+
+    const auto mode_field = object.find("mode");
+    if (mode_field == object.end() || !mode_field->value().is_string()) {
+        return error_response(bh::status::bad_request, "invalid_mode", "mode must be a string");
+    }
+    const std::string_view mode = mode_field->value().as_string();
+    if (mode == "expanded") {
+        return error_response(bh::status::bad_request, "unsupported_mode",
+                              "expanded mode is not available yet");
+    }
+    if (mode != "keyword") {
+        return error_response(bh::status::bad_request, "invalid_mode",
+                              "mode must be \"keyword\" or \"expanded\"");
+    }
+    return SearchRequest{std::string(trimmed)};
+}
+
+Response search_response(const std::vector<query::SearchHit> &hits, std::uint64_t time_ms) {
+    boost::json::array results;
+    for (const query::SearchHit &hit : hits) {
+        results.push_back(boost::json::object{
+            {"doc_id", hit.doc_id}, {"score", hit.score}, {"snippet", hit.snippet}});
+    }
+    boost::json::object body{{"results", std::move(results)}, {"time_ms", time_ms}};
     return json_response(bh::status::ok, boost::json::serialize(body));
 }
 
@@ -126,7 +182,7 @@ Response route(const Request &request, bool ollama_available) {
             return error_response(bh::status::not_implemented, "not_implemented",
                                   "endpoint is not implemented yet");
         }
-        if (path == "/api/index" || path == "/api/stats") {
+        if (path == "/api/index" || path == "/api/stats" || path == "/api/search") {
             // Сесія обробляє EP-02 і EP-04 до маршрутизації; сюди запит не доходить.
             return error_response(bh::status::internal_server_error, "internal_error",
                                   "index request routed incorrectly");

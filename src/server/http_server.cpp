@@ -1,5 +1,6 @@
 #include "server/http_server.hpp"
 
+#include "query/search_service.hpp"
 #include "server/router.hpp"
 
 #include <boost/beast/core.hpp>
@@ -32,7 +33,8 @@ class Session : public std::enable_shared_from_this<Session> {
         : stream_(std::move(socket)), max_body_bytes_(options.max_request_body_bytes),
           timeout_(options.request_timeout), ollama_check_(options.ollama_check),
           index_start_(options.index_start), default_index_threads_(options.default_index_threads),
-          max_index_threads_(options.max_index_threads), stats_provider_(options.stats_provider) {}
+          max_index_threads_(options.max_index_threads), stats_provider_(options.stats_provider),
+          search_handler_(options.search_handler), max_query_length_(options.max_query_length) {}
 
     void start() { read_header(); }
 
@@ -77,6 +79,11 @@ class Session : public std::enable_shared_from_this<Session> {
             read_index_body();
             return;
         }
+        if (is_search_request(parser_.get())) {
+            read_request_body(
+                [self = shared_from_this()](beast::error_code ec) { self->on_search_body(ec); });
+            return;
+        }
         if (is_stats_request(parser_.get())) {
             send(stats_response(stats_provider_ ? stats_provider_() : index::IndexStats{}));
             return;
@@ -106,6 +113,12 @@ class Session : public std::enable_shared_from_this<Session> {
 
     // EP-02: тіло читаємо з тим самим лімітом; відповідь відкладаємо до кінця побудови.
     void read_index_body() {
+        read_request_body(
+            [self = shared_from_this()](beast::error_code ec) { self->on_index_body(ec); });
+    }
+
+    // Читає тіло з лімітом max_body_bytes_ і передає результат у on_ready (413 — окремо).
+    template <typename OnReady> void read_request_body(OnReady on_ready) {
         const auto length = parser_.content_length();
         if (length && *length > max_body_bytes_) {
             send(payload_too_large());
@@ -114,9 +127,48 @@ class Session : public std::enable_shared_from_this<Session> {
         parser_.body_limit(max_body_bytes_);
         stream_.expires_after(timeout_);
         http::async_read(stream_, buffer_, parser_,
-                         [self = shared_from_this()](beast::error_code body_ec, std::size_t) {
-                             self->on_index_body(body_ec);
+                         [on_ready = std::move(on_ready)](beast::error_code body_ec, std::size_t) {
+                             on_ready(body_ec);
                          });
+    }
+
+    void on_search_body(beast::error_code ec) {
+        if (ec == http::error::body_limit) {
+            send(payload_too_large());
+            return;
+        }
+        if (ec) {
+            close();
+            return;
+        }
+        auto parsed = parse_search_body(parser_.get().body(), max_query_length_);
+        if (std::holds_alternative<Response>(parsed)) {
+            send(std::get<Response>(std::move(parsed)));
+            return;
+        }
+        if (!search_handler_) {
+            send(error_response(http::status::internal_server_error, "internal_error",
+                                "search endpoint is not configured"));
+            return;
+        }
+        const std::string query = std::get<SearchRequest>(parsed).query;
+        const auto started = std::chrono::steady_clock::now();
+        try {
+            std::vector<query::SearchHit> hits = search_handler_(query);
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started);
+            send(search_response(hits, static_cast<std::uint64_t>(elapsed.count())));
+        } catch (const query::IndexNotReadyError &) {
+            send(error_response(http::status::conflict, "index_not_ready",
+                                "index is not built yet"));
+        } catch (const std::exception &e) {
+            std::cerr << "search failed: " << e.what() << '\n';
+            send(error_response(http::status::internal_server_error, "internal_error",
+                                "search failed"));
+        } catch (...) {
+            send(error_response(http::status::internal_server_error, "internal_error",
+                                "search failed"));
+        }
     }
 
     void on_index_body(beast::error_code ec) {
@@ -253,6 +305,8 @@ class Session : public std::enable_shared_from_this<Session> {
     std::size_t default_index_threads_;
     std::size_t max_index_threads_;
     std::function<index::IndexStats()> stats_provider_;
+    SearchHandler search_handler_;
+    std::size_t max_query_length_;
     std::array<char, 4096> scratch_{};
     std::size_t drained_ = 0;
 };

@@ -51,6 +51,15 @@ Config parse_config(const EnvLookup &lookup) {
     if (cfg.default_index_threads > cfg.max_index_threads) {
         throw ConfigError("DEFAULT_INDEX_THREADS: перевищує MAX_INDEX_THREADS");
     }
+    if (const auto v = lookup("SEARCH_TOP_K")) {
+        cfg.search_top_k = parse_integer<std::size_t>("SEARCH_TOP_K", *v, 1, 1000);
+    }
+    if (const auto v = lookup("MAX_QUERY_LENGTH")) {
+        cfg.max_query_length = parse_integer<std::size_t>("MAX_QUERY_LENGTH", *v, 1, 4096);
+    }
+    if (const auto v = lookup("SNIPPET_MAX_CHARS")) {
+        cfg.snippet_max_chars = parse_integer<std::size_t>("SNIPPET_MAX_CHARS", *v, 1, 10000);
+    }
     if (const auto v = lookup("MAX_REQUEST_BODY_BYTES")) {
         cfg.max_request_body_bytes =
             parse_integer<std::size_t>("MAX_REQUEST_BODY_BYTES", *v, 1, std::size_t{1} << 30);

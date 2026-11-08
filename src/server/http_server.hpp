@@ -1,6 +1,7 @@
 #pragma once
 
 #include "index/index_manager.hpp"
+#include "query/search_service.hpp"
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -10,6 +11,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <string_view>
+#include <vector>
 
 namespace search::server {
 
@@ -21,6 +24,9 @@ using OllamaCheck = std::function<void(std::function<void(bool)>)>;
 // побудову не вдалося запустити (500 internal_error).
 using IndexStarter = std::function<bool(std::size_t threads, index::BuildCallback done)>;
 
+// EP-03: пошук за запитом; кидає query::IndexNotReadyError, якщо індексу немає.
+using SearchHandler = std::function<std::vector<query::SearchHit>(std::string_view query)>;
+
 struct ServerOptions {
     std::uint16_t port = 8080; // 0 — операційна система обирає порт (для тестів)
     std::size_t max_request_body_bytes = 1 << 20;
@@ -31,6 +37,10 @@ struct ServerOptions {
     IndexStarter index_start;
     std::size_t default_index_threads = 1; // DEFAULT_INDEX_THREADS (після розв'язання 0)
     std::size_t max_index_threads = 1;     // MAX_INDEX_THREADS
+
+    // EP-03: порожньо = 500 internal_error.
+    SearchHandler search_handler;
+    std::size_t max_query_length = 256; // MAX_QUERY_LENGTH
 
     // EP-04: статистика активного індексу. Порожньо = нулі (до першої побудови).
     std::function<index::IndexStats()> stats_provider;
