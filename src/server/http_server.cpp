@@ -7,6 +7,7 @@
 #include <boost/json.hpp>
 
 #include <array>
+#include <boost/none.hpp>
 #include <cstddef>
 #include <exception>
 #include <iostream>
@@ -37,6 +38,9 @@ class Session : public std::enable_shared_from_this<Session> {
 
   private:
     void read_header() {
+        // Beast за замовчуванням відхиляє тіло понад 1 MiB ще на етапі заголовків (400).
+        // Ліміт задає сесія: явна перевірка Content-Length дає 413 для будь-якого налаштування.
+        parser_.body_limit(boost::none);
         stream_.expires_after(timeout_);
         http::async_read_header(stream_, buffer_, parser_,
                                 [self = shared_from_this()](beast::error_code ec, std::size_t) {
@@ -48,6 +52,10 @@ class Session : public std::enable_shared_from_this<Session> {
     void on_header(beast::error_code ec) {
         if (ec == http::error::end_of_stream || ec == beast::error::timeout) {
             close();
+            return;
+        }
+        if (ec == http::error::body_limit) {
+            send(payload_too_large());
             return;
         }
         if (ec) {
@@ -141,7 +149,14 @@ class Session : public std::enable_shared_from_this<Session> {
                               [self, result]() { self->finish_index_build(result); });
                 });
         } catch (const std::exception &e) {
-            send(error_response(http::status::internal_server_error, "internal_error", e.what()));
+            // Подробиці (наприклад, системна помилка створення потоку) не віддаємо клієнту.
+            std::cerr << "index build start failed: " << e.what() << '\n';
+            send(error_response(http::status::internal_server_error, "internal_error",
+                                "failed to start index build"));
+            return;
+        } catch (...) {
+            send(error_response(http::status::internal_server_error, "internal_error",
+                                "failed to start index build"));
             return;
         }
         if (!started) {

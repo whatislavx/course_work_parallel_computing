@@ -2,6 +2,7 @@
 
 #include "index/shared_inverted_index.hpp"
 
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -55,12 +56,14 @@ class IndexManager {
 
     // Запускає побудову з каталогу dataset_dir і threads потоками. Повертає false, якщо
     // побудова вже триває (409 index_build_in_progress); тоді on_done не викликається.
-    // Кидає std::invalid_argument при threads == 0. on_done (за наявності) викликається рівно
-    // один раз після завершення, з потоку побудови.
+    // Кидає std::invalid_argument при threads == 0, std::logic_error при виклику з on_done,
+    // std::system_error, якщо не вдалося створити потік (стан повертається до попереднього).
+    // on_done (за наявності) викликається рівно один раз після завершення, з потоку побудови.
     bool start_build(std::filesystem::path dataset_dir, std::size_t threads,
                      BuildCallback on_done = {});
 
-    // Блокується до завершення поточної побудови (якщо вона є).
+    // Блокується, доки побудова не завершиться (стан building_ скинуто). Callback on_done може
+    // ще виконуватися. Не викликати з on_done: callback виконується в потоці побудови.
     void wait_for_build();
 
     IndexState state() const;
@@ -86,6 +89,7 @@ class IndexManager {
     IndexStats stats_;
     std::optional<std::string> last_error_;
     bool building_ = false;
+    std::condition_variable idle_cv_; // сигналізує про building_ == false
     std::thread builder_;
 };
 

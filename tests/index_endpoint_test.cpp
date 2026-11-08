@@ -296,3 +296,21 @@ TEST_F(IndexEndpointTest, GetOnIndexReturnsMethodNotAllowed) {
     EXPECT_EQ(res.result(), http::status::method_not_allowed);
     EXPECT_EQ(res[http::field::allow], "POST");
 }
+
+// Регресія рев'ю: Content-Length понад 1 MiB (дефолтний ліміт Beast) має давати 413, а не 400.
+TEST_F(IndexEndpointTest, ContentLengthAboveBeastDefaultReturnsPayloadTooLarge) {
+    start_server([](std::size_t, BuildCallback) {
+        ADD_FAILURE() << "побудова не має стартувати для завеликого тіла";
+        return false;
+    });
+    net::io_context client_ioc;
+    tcp::socket socket(client_ioc);
+    socket.connect({net::ip::make_address("127.0.0.1"), port_});
+    const std::string header = "POST /api/index HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                               "Content-Type: application/json\r\nContent-Length: 2097152\r\n\r\n";
+    net::write(socket, net::buffer(header));
+    beast::flat_buffer buffer;
+    http::response<http::string_body> res;
+    http::read(socket, buffer, res);
+    EXPECT_EQ(res.result(), http::status::payload_too_large);
+}
