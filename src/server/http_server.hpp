@@ -31,6 +31,9 @@ struct ServerOptions {
     IndexStarter index_start;
     std::size_t default_index_threads = 1; // DEFAULT_INDEX_THREADS (після розв'язання 0)
     std::size_t max_index_threads = 1;     // MAX_INDEX_THREADS
+
+    // EP-04: статистика активного індексу. Порожньо = нулі (до першої побудови).
+    std::function<index::IndexStats()> stats_provider;
 };
 
 // Один запит на з'єднання (Connection: close). Keep-alive і паралелізм — у TCK-019.

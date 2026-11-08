@@ -25,7 +25,7 @@ constexpr Route kRoutes[] = {
     {"/api/health", bh::verb::get, true},
     {"/api/index", bh::verb::post, true},
     {"/api/search", bh::verb::post, false},
-    {"/api/stats", bh::verb::get, false},
+    {"/api/stats", bh::verb::get, true},
 };
 
 std::string_view path_of(std::string_view target) { return target.substr(0, target.find('?')); }
@@ -53,6 +53,17 @@ Response error_response(bh::status status, std::string_view code, std::string_vi
 
 bool is_health_request(const Request &request) {
     return path_of(request.target()) == "/api/health" && request.method() == bh::verb::get;
+}
+
+bool is_stats_request(const Request &request) {
+    return path_of(request.target()) == "/api/stats" && request.method() == bh::verb::get;
+}
+
+Response stats_response(const index::IndexStats &stats) {
+    boost::json::object body{{"documents", stats.documents},
+                             {"index_build_time_ms", stats.index_build_time_ms},
+                             {"threads_used", stats.threads_used}};
+    return json_response(bh::status::ok, boost::json::serialize(body));
 }
 
 bool is_index_request(const Request &request) {
@@ -115,8 +126,8 @@ Response route(const Request &request, bool ollama_available) {
             return error_response(bh::status::not_implemented, "not_implemented",
                                   "endpoint is not implemented yet");
         }
-        if (path == "/api/index") {
-            // Сесія обробляє EP-02 до маршрутизації; сюди запит не доходить.
+        if (path == "/api/index" || path == "/api/stats") {
+            // Сесія обробляє EP-02 і EP-04 до маршрутизації; сюди запит не доходить.
             return error_response(bh::status::internal_server_error, "internal_error",
                                   "index request routed incorrectly");
         }

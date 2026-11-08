@@ -74,6 +74,7 @@ class IndexEndpointTest : public ::testing::Test {
         options.index_start = std::move(starter);
         options.default_index_threads = kDefaultThreads;
         options.max_index_threads = kMaxThreads;
+        options.stats_provider = [this] { return manager_.stats(); };
         server_ = std::make_unique<HttpServer>(ioc_, options);
         server_->start();
         port_ = server_->port();
@@ -313,4 +314,38 @@ TEST_F(IndexEndpointTest, ContentLengthAboveBeastDefaultReturnsPayloadTooLarge) 
     http::response<http::string_body> res;
     http::read(socket, buffer, res);
     EXPECT_EQ(res.result(), http::status::payload_too_large);
+}
+
+// EP-04: до першої побудови — нулі (FR-011).
+TEST_F(IndexEndpointTest, StatsBeforeBuildReturnsZeros) {
+    start_server([](std::size_t, BuildCallback) { return false; });
+    const auto res = request("", http::verb::get, "/api/stats");
+    ASSERT_EQ(res.result(), http::status::ok);
+    const auto body = boost::json::parse(res.body()).as_object();
+    EXPECT_EQ(body.at("documents").as_int64(), 0);
+    EXPECT_EQ(body.at("index_build_time_ms").as_int64(), 0);
+    EXPECT_EQ(body.at("threads_used").as_int64(), 0);
+    EXPECT_EQ(body.size(), 3u);
+}
+
+// EP-04 після побудови повертає статистику активного індексу.
+TEST_F(IndexEndpointTest, StatsAfterBuildReflectActiveIndex) {
+    dataset_ = make_dataset("stats_after_build");
+    start_server(real_starter(dataset_));
+    ASSERT_EQ(request(R"({"threads": 3})").result(), http::status::ok);
+
+    const auto res = request("", http::verb::get, "/api/stats");
+    ASSERT_EQ(res.result(), http::status::ok);
+    const auto body = boost::json::parse(res.body()).as_object();
+    EXPECT_EQ(body.at("documents").as_int64(), 3);
+    EXPECT_EQ(body.at("threads_used").as_int64(), 3);
+    EXPECT_GE(body.at("index_build_time_ms").as_int64(), 0);
+}
+
+// Метод POST на /api/stats → 405 з Allow: GET.
+TEST_F(IndexEndpointTest, PostOnStatsReturnsMethodNotAllowed) {
+    start_server([](std::size_t, BuildCallback) { return false; });
+    const auto res = request("", http::verb::post, "/api/stats");
+    EXPECT_EQ(res.result(), http::status::method_not_allowed);
+    EXPECT_EQ(res[http::field::allow], "GET");
 }
