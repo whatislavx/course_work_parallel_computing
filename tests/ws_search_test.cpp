@@ -7,6 +7,7 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/json.hpp>
@@ -82,7 +83,14 @@ class WsSearchTest : public ::testing::Test {
         options.expansion_handler = [this](std::string,
                                            std::function<void(std::vector<std::string>)> done) {
             ++expansion_calls_;
-            done(expansion_terms_);
+            if (expansion_delay_.count() == 0) {
+                done(expansion_terms_);
+                return;
+            }
+            // Затримка Ollama (BDD-WS-06, BDD-WS-08): таймер на io_context сервера.
+            auto timer = std::make_shared<net::steady_timer>(ioc_, expansion_delay_);
+            timer->async_wait(
+                [timer, terms = expansion_terms_, done](beast::error_code) { done(terms); });
         };
         server_ = std::make_unique<search::server::HttpServer>(ioc_, options);
         server_->start();
@@ -109,6 +117,7 @@ class WsSearchTest : public ::testing::Test {
     }
 
     std::vector<std::string> expansion_terms_;
+    std::chrono::milliseconds expansion_delay_{0};
     std::atomic<int> expansion_calls_{0};
     std::filesystem::path dataset_;
     search::index::IndexManager manager_;
@@ -211,4 +220,81 @@ TEST_F(WsSearchTest, ExpansionFallbackStillStreamsKeywordAndDone) {
     EXPECT_TRUE(expansion.at("data").as_object().at("expanded_terms").as_array().empty());
     EXPECT_EQ(stage_of(read_message(*ws)), "keyword_search");
     EXPECT_EQ(stage_of(read_message(*ws)), "done");
+}
+
+// BDD-WS-04: усі некоректні повідомлення дають error з потрібним кодом; з'єднання відкрите.
+TEST_F(WsSearchTest, InvalidClientMessagesReturnErrorCodesAndKeepConnection) {
+    start(/*build=*/true);
+    auto ws = connect();
+    const std::string too_long(257, 'a');
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {"[1, 2]", "invalid_json"},
+        {R"({"q": "parallel"})", "invalid_query"},
+        {R"({"query": ""})", "invalid_query"},
+        {R"({"query": "   "})", "invalid_query"},
+        {R"({"query": 7})", "invalid_query"},
+        {R"({"query": ")" + too_long + R"("})", "invalid_query"},
+    };
+    for (const auto &[message, code] : cases) {
+        ws->write(net::buffer(message));
+        const auto error = read_message(*ws);
+        EXPECT_EQ(stage_of(error), "error") << message;
+        EXPECT_EQ(error.at("data").as_object().at("code").as_string(), code) << message;
+    }
+    ws->binary(true);
+    ws->write(net::buffer(std::string("\x01\x02")));
+    ws->text(true);
+    const auto binary_error = read_message(*ws);
+    EXPECT_EQ(binary_error.at("data").as_object().at("code").as_string(), "invalid_json");
+
+    ws->write(net::buffer(std::string(R"({"query": "alpha"})")));
+    EXPECT_EQ(stage_of(read_message(*ws)), "query_expansion");
+    EXPECT_EQ(stage_of(read_message(*ws)), "keyword_search");
+    EXPECT_EQ(stage_of(read_message(*ws)), "done");
+    EXPECT_EQ(expansion_calls_.load(), 1) << "некоректні повідомлення не викликають Ollama";
+}
+
+// BDD-WS-08 / FR-027: повідомлення під час пайплайну отримує pipeline_busy; перший пайплайн
+// завершується done; запит після done приймається.
+TEST_F(WsSearchTest, QueryWhilePipelineRunsIsRejectedWithPipelineBusy) {
+    expansion_delay_ = std::chrono::milliseconds(300);
+    start(/*build=*/true);
+    auto ws = connect();
+    ws->write(net::buffer(std::string(R"({"query": "alpha"})")));
+    ws->write(net::buffer(std::string(R"({"query": "beta"})")));
+
+    const auto busy = read_message(*ws);
+    EXPECT_EQ(stage_of(busy), "error");
+    EXPECT_EQ(busy.at("data").as_object().at("code").as_string(), "pipeline_busy");
+
+    const auto expansion = read_message(*ws);
+    EXPECT_EQ(stage_of(expansion), "query_expansion");
+    EXPECT_EQ(expansion.at("data").as_object().at("original").as_string(), "alpha");
+    EXPECT_EQ(stage_of(read_message(*ws)), "keyword_search");
+    EXPECT_EQ(stage_of(read_message(*ws)), "done");
+
+    expansion_delay_ = std::chrono::milliseconds(0);
+    ws->write(net::buffer(std::string(R"({"query": "beta"})")));
+    EXPECT_EQ(stage_of(read_message(*ws)), "query_expansion");
+    EXPECT_EQ(stage_of(read_message(*ws)), "keyword_search");
+    EXPECT_EQ(stage_of(read_message(*ws)), "done");
+}
+
+// BDD-WS-06 / NFR-009: обрив клієнта A посеред пайплайну не впливає на клієнта B.
+TEST_F(WsSearchTest, ClientDisconnectMidPipelineDoesNotAffectOtherClients) {
+    expansion_delay_ = std::chrono::milliseconds(300);
+    start(/*build=*/true);
+    auto client_a = connect();
+    client_a->write(net::buffer(std::string(R"({"query": "alpha"})")));
+    beast::error_code ignored;
+    client_a->next_layer().close(ignored);
+    client_a.reset();
+
+    auto client_b = connect();
+    client_b->write(net::buffer(std::string(R"({"query": "beta"})")));
+    const auto expansion = read_message(*client_b);
+    EXPECT_EQ(stage_of(expansion), "query_expansion");
+    EXPECT_EQ(expansion.at("data").as_object().at("original").as_string(), "beta");
+    EXPECT_EQ(stage_of(read_message(*client_b)), "keyword_search");
+    EXPECT_EQ(stage_of(read_message(*client_b)), "done");
 }

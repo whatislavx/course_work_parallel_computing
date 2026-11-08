@@ -74,6 +74,7 @@ class WsSearchSession : public std::enable_shared_from_this<WsSearchSession> {
     WsSearchDeps deps_;
     std::deque<std::string> outgoing_; // Guarded by io_context (одночасно лише в потоці io)
     bool writing_ = false;
+    bool busy_ = false; // пайплайн сесії ще виконується (FR-027, pipeline_busy)
 };
 
 } // namespace search::server

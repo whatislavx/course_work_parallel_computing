@@ -165,9 +165,12 @@ void WsSearchSession::on_read(beast::error_code ec) {
     }
     const std::string text = beast::buffers_to_string(buffer_.data());
     buffer_.consume(buffer_.size());
-    if (!ws_.got_text()) {
+    // Читання не чекає пайплайну: повідомлення під час виконання отримує pipeline_busy, а не
+    // лежить у буфері (BDD-WS-08). got_text() треба прочитати до наступного async_read.
+    const bool is_text = ws_.got_text();
+    read_next();
+    if (!is_text) {
         enqueue(serialize_error("invalid_json", "binary frames are not supported"));
-        read_next();
         return;
     }
     handle_message(text);
@@ -176,18 +179,22 @@ void WsSearchSession::on_read(beast::error_code ec) {
 void WsSearchSession::handle_message(const std::string &text) {
     std::string query;
     const std::string code = parse_client_message(text, deps_.max_query_length, &query);
+    // Порядок перевірок як у 06 §4.5: формат і поля, потім зайнятість, потім індекс.
     if (!code.empty()) {
         enqueue(serialize_error(code, code == "invalid_json" ? "message is not a JSON object"
                                                              : "query must be a non-empty string"));
-        read_next();
+        return;
+    }
+    if (busy_) {
+        enqueue(serialize_error("pipeline_busy", "previous query is still running"));
         return;
     }
     // Перевірка індексу до виклику Ollama: за відсутності індексу query_expansion не надсилається.
     if (deps_.index_ready && !deps_.index_ready()) {
         enqueue(serialize_error("index_not_ready", "index is not built yet"));
-        read_next();
         return;
     }
+    busy_ = true;
     if (deps_.expansion) {
         deps_.expansion(query, [self = shared_from_this(), query](std::vector<std::string> terms) {
             self->on_expansion(query, std::move(terms));
@@ -219,13 +226,13 @@ void WsSearchSession::run_keyword(const std::string &query, const std::vector<st
 }
 
 void WsSearchSession::on_keyword(KeywordOutcome outcome) {
+    busy_ = false;
     if (!outcome.ok) {
         enqueue(serialize_error(outcome.error_code, outcome.message));
     } else {
         enqueue(serialize_keyword(outcome.hits, outcome.time_ms));
         enqueue(serialize_done());
     }
-    read_next();
 }
 
 void WsSearchSession::enqueue(std::string message) {
