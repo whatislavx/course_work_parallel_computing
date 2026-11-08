@@ -9,32 +9,33 @@ namespace search::ranking {
 
 std::vector<ScoredDocument> rank_tfidf(const index::SharedInvertedIndex &index,
                                        std::vector<std::string> terms) {
-    std::vector<ScoredDocument> contributions;
-    const std::size_t total_documents = index.document_count();
-    if (total_documents == 0) {
-        return {};
-    }
-
     // Унікальні терми: повторний терм запиту не має подвоювати внесок.
     std::sort(terms.begin(), terms.end());
     terms.erase(std::unique(terms.begin(), terms.end()), terms.end());
 
-    for (const std::string &term : terms) {
-        const std::vector<std::string> documents = index.documents_containing(term);
-        if (documents.empty()) {
+    // Один знімок під замком: N і df узгоджені між собою навіть за паралельного запису.
+    const index::RankingStatistics stats = index.ranking_statistics(terms);
+    if (stats.document_count == 0) {
+        return {};
+    }
+    const auto total_documents = static_cast<double>(stats.document_count);
+
+    std::vector<ScoredDocument> contributions;
+    for (const index::TermPostings &term : stats.terms) {
+        if (term.docs.empty()) {
             continue;
         }
-        const double idf =
-            std::log(static_cast<double>(total_documents) / static_cast<double>(documents.size()));
-        for (const std::string &doc_id : documents) {
-            const double tf = static_cast<double>(index.term_frequency(term, doc_id));
-            contributions.push_back({doc_id, tf * idf});
+        const double idf = std::log(total_documents / static_cast<double>(term.docs.size()));
+        for (const auto &[doc_id, tf] : term.docs) {
+            contributions.push_back({doc_id, static_cast<double>(tf) * idf});
         }
     }
 
-    // Сумуємо внески одного документа: сортування за doc_id групує їх без map.
-    std::sort(contributions.begin(), contributions.end(),
-              [](const ScoredDocument &a, const ScoredDocument &b) { return a.doc_id < b.doc_id; });
+    // stable_sort зберігає порядок внесків одного документа (за порядком термів), тож
+    // підсумовування відбувається в детермінованому порядку.
+    std::stable_sort(
+        contributions.begin(), contributions.end(),
+        [](const ScoredDocument &a, const ScoredDocument &b) { return a.doc_id < b.doc_id; });
     std::vector<ScoredDocument> ranked;
     for (ScoredDocument &item : contributions) {
         if (!ranked.empty() && ranked.back().doc_id == item.doc_id) {
