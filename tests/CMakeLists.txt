@@ -11,6 +11,7 @@ add_executable(search_tests
     index_manager_test.cpp
     index_endpoint_test.cpp
     ranking_test.cpp
+    snippet_test.cpp
     ollama_test.cpp
 )
 target_link_libraries(search_tests PRIVATE search_core GTest::gtest_main)
