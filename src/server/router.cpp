@@ -100,14 +100,9 @@ std::variant<SearchRequest, Response> parse_search_body(std::string_view body,
     if (mode_field == object.end() || !mode_field->value().is_string()) {
         return error_response(bh::status::bad_request, "invalid_mode", "mode must be a string");
     }
-    const std::string_view mode = mode_field->value().as_string();
-    if (mode == "expanded") {
-        return error_response(bh::status::bad_request, "unsupported_mode",
-                              "expanded mode is not available yet");
-    }
-    if (mode != "keyword") {
-        return error_response(bh::status::bad_request, "invalid_mode",
-                              "mode must be \"keyword\" or \"expanded\"");
+    // 06 §2.4 і BDD: unsupported_mode — будь-яке рядкове значення, крім підтриманого.
+    if (mode_field->value().as_string() != "keyword") {
+        return error_response(bh::status::bad_request, "unsupported_mode", "mode is not supported");
     }
     return SearchRequest{std::string(trimmed)};
 }

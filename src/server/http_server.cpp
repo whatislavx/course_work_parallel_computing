@@ -132,6 +132,29 @@ class Session : public std::enable_shared_from_this<Session> {
                          });
     }
 
+    static Response internal_error_response() {
+        return error_response(http::status::internal_server_error, "internal_error",
+                              "search failed");
+    }
+
+    // Розбирає тіло, виконує пошук і формує відповідь 200 або 400. Винятки піднімаються вгору.
+    Response build_search_response() {
+        auto parsed = parse_search_body(parser_.get().body(), max_query_length_);
+        if (std::holds_alternative<Response>(parsed)) {
+            return std::get<Response>(std::move(parsed));
+        }
+        if (!search_handler_) {
+            return error_response(http::status::internal_server_error, "internal_error",
+                                  "search endpoint is not configured");
+        }
+        const std::string text = std::get<SearchRequest>(parsed).query;
+        const auto started = std::chrono::steady_clock::now();
+        std::vector<query::SearchHit> hits = search_handler_(text);
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started);
+        return search_response(hits, static_cast<std::uint64_t>(elapsed.count()));
+    }
+
     void on_search_body(beast::error_code ec) {
         if (ec == http::error::body_limit) {
             send(payload_too_large());
@@ -141,34 +164,20 @@ class Session : public std::enable_shared_from_this<Session> {
             close();
             return;
         }
-        auto parsed = parse_search_body(parser_.get().body(), max_query_length_);
-        if (std::holds_alternative<Response>(parsed)) {
-            send(std::get<Response>(std::move(parsed)));
-            return;
-        }
-        if (!search_handler_) {
-            send(error_response(http::status::internal_server_error, "internal_error",
-                                "search endpoint is not configured"));
-            return;
-        }
-        const std::string query = std::get<SearchRequest>(parsed).query;
-        const auto started = std::chrono::steady_clock::now();
+        // Усі винятки обробника ловимо тут: вони не мають вийти з io_context і завершити процес.
+        // send викликається рівно один раз після блоку.
+        Response response = internal_error_response();
         try {
-            std::vector<query::SearchHit> hits = search_handler_(query);
-            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - started);
-            send(search_response(hits, static_cast<std::uint64_t>(elapsed.count())));
+            response = build_search_response();
         } catch (const query::IndexNotReadyError &) {
-            send(error_response(http::status::conflict, "index_not_ready",
-                                "index is not built yet"));
+            response =
+                error_response(http::status::conflict, "index_not_ready", "index is not built yet");
         } catch (const std::exception &e) {
             std::cerr << "search failed: " << e.what() << '\n';
-            send(error_response(http::status::internal_server_error, "internal_error",
-                                "search failed"));
         } catch (...) {
-            send(error_response(http::status::internal_server_error, "internal_error",
-                                "search failed"));
+            // Невідомий тип винятку: відповідь 500 нижче.
         }
+        send(std::move(response));
     }
 
     void on_index_body(beast::error_code ec) {

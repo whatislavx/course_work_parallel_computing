@@ -4,8 +4,10 @@
 #include "search/ranking.hpp"
 #include "search/snippet.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <system_error>
 #include <utility>
 
 namespace search::query {
@@ -23,7 +25,21 @@ std::string read_document(const std::filesystem::path &dataset_dir, const std::s
             return {};
         }
     }
-    std::ifstream in(dataset_dir / relative, std::ios::binary);
+    // Симлінк або пристрій може вивести файл за межі датасету: перевіряємо канонічний шлях.
+    std::error_code ec;
+    const std::filesystem::path root = std::filesystem::weakly_canonical(dataset_dir, ec);
+    if (ec) {
+        return {};
+    }
+    const std::filesystem::path full = std::filesystem::weakly_canonical(root / relative, ec);
+    if (ec) {
+        return {};
+    }
+    const auto mismatch = std::mismatch(root.begin(), root.end(), full.begin(), full.end());
+    if (mismatch.first != root.end() || !std::filesystem::is_regular_file(full, ec) || ec) {
+        return {};
+    }
+    std::ifstream in(full, std::ios::binary);
     if (!in) {
         return {};
     }

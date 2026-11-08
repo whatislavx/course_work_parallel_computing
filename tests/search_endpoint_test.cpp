@@ -90,10 +90,11 @@ TEST(SearchBody, QueryLongerThanLimitIsInvalidQuery) {
 
 TEST(SearchBody, MissingOrUnknownModeIsInvalidMode) {
     EXPECT_EQ(error_code_of(parse_error(R"({"query": "a"})")), "invalid_mode");
-    EXPECT_EQ(error_code_of(parse_error(R"({"query": "a", "mode": "fuzzy"})")), "invalid_mode");
+    EXPECT_EQ(error_code_of(parse_error(R"({"query": "a", "mode": "fuzzy"})")), "unsupported_mode");
     EXPECT_EQ(error_code_of(parse_error(R"({"query": "a", "mode": 1})")), "invalid_mode");
 }
 
+// Рішення для expanded відкрите: 02 і 06 суперечать (див. backlog BL-04).
 TEST(SearchBody, ExpandedModeIsUnsupportedUntilLlmTicket) {
     EXPECT_EQ(error_code_of(parse_error(R"({"query": "a", "mode": "expanded"})")),
               "unsupported_mode");
