@@ -16,6 +16,7 @@ add_executable(search_tests
     generate_test.cpp
     ollama_test.cpp
     expansion_fallback_test.cpp
+    ws_search_test.cpp
 )
 target_link_libraries(search_tests PRIVATE search_core GTest::gtest_main)
 include(GoogleTest)

@@ -53,6 +53,8 @@ struct ServerOptions {
     // EP-03: порожньо = 500 internal_error.
     SearchHandler search_handler;
     ExpansionHandler expansion_handler; // порожньо = розширення вимкнено (лише keyword)
+    // WS /ws/search (TCK-022): чи є активний індекс. Порожньо = індекс вважається готовим.
+    std::function<bool()> index_ready;
     SearchExecutor search_executor; // пул пошуку (TCK-019)
     // Ліміт одночасних HTTP-з'єднань (OQ-35, плейсхолдер). Понад ліміт — 503 server_busy,
     // крім GET /api/health (FR-001).

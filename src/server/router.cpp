@@ -1,5 +1,6 @@
 #include "server/router.hpp"
 
+#include <boost/beast/websocket.hpp>
 #include <boost/json.hpp>
 
 #include <cstdint>
@@ -68,6 +69,11 @@ Response stats_response(const index::IndexStats &stats) {
 
 bool is_search_request(const Request &request) {
     return path_of(request.target()) == "/api/search" && request.method() == bh::verb::post;
+}
+
+bool is_ws_search_request(const Request &request) {
+    return path_of(request.target()) == "/ws/search" && request.method() == bh::verb::get &&
+           boost::beast::websocket::is_upgrade(request);
 }
 
 std::variant<SearchRequest, Response> parse_search_body(std::string_view body,

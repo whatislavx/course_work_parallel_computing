@@ -15,6 +15,7 @@ add_library(search_core STATIC
     pool/thread_pool.cpp
     server/http_server.cpp
     server/router.cpp
+    server/ws_search_session.cpp
     search/ranking.cpp
     search/snippet.cpp
     query/search_service.cpp

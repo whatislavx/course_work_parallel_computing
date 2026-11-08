@@ -41,6 +41,9 @@ std::variant<SearchRequest, Response> parse_search_body(std::string_view body,
 // Чи є запит POST /api/search (обробляє сесія: тіло, пошук, відповідь).
 bool is_search_request(const Request &request);
 
+// Чи є запит GET /ws/search з Upgrade: websocket (сесія передає сокет WebSocket-сесії).
+bool is_ws_search_request(const Request &request);
+
 // Відповідь EP-03 з результатами пошуку та часом виконання (06 EP-03).
 Response search_response(const std::vector<query::SearchHit> &hits, std::uint64_t time_ms);
 

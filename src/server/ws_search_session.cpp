@@ -1,0 +1,258 @@
+#include "server/ws_search_session.hpp"
+
+#include "query/search_service.hpp"
+
+#include <boost/asio/post.hpp>
+#include <boost/beast/core/buffers_to_string.hpp>
+#include <boost/json.hpp>
+
+#include <chrono>
+#include <cstdint>
+#include <exception>
+#include <iostream>
+#include <string_view>
+#include <utility>
+
+namespace search::server {
+namespace {
+
+namespace beast = boost::beast;
+namespace websocket = beast::websocket;
+namespace net = boost::asio;
+namespace json = boost::json;
+
+// Виконує пошук і формує результат етапу. Винятки не виходять назовні (06 §4.5).
+KeywordOutcome run_keyword_search(const SearchHandler &handler, const std::string &query,
+                                  const std::vector<std::string> &terms) {
+    KeywordOutcome outcome;
+    try {
+        if (!handler) {
+            outcome.error_code = "internal_error";
+            outcome.message = "search is not configured";
+            return outcome;
+        }
+        const auto started = std::chrono::steady_clock::now();
+        outcome.hits = handler(query, terms);
+        outcome.time_ms =
+            static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                           std::chrono::steady_clock::now() - started)
+                                           .count());
+        outcome.ok = true;
+    } catch (const query::IndexNotReadyError &) {
+        outcome.error_code = "index_not_ready";
+        outcome.message = "index is not built yet";
+    } catch (const std::exception &e) {
+        std::cerr << "ws search failed: " << e.what() << '\n';
+        outcome.error_code = "internal_error";
+        outcome.message = "internal server error";
+    } catch (...) {
+        outcome.error_code = "internal_error";
+        outcome.message = "internal server error";
+    }
+    return outcome;
+}
+
+std::string serialize_error(std::string_view code, std::string_view message) {
+    json::object data;
+    data["code"] = std::string(code);
+    data["message"] = std::string(message);
+    json::object event;
+    event["stage"] = "error";
+    event["data"] = std::move(data);
+    return json::serialize(event);
+}
+
+std::string serialize_expansion(const std::string &query, const std::vector<std::string> &terms) {
+    json::array expanded;
+    for (const std::string &term : terms) {
+        expanded.emplace_back(term);
+    }
+    json::object data;
+    data["original"] = query;
+    data["expanded_terms"] = std::move(expanded);
+    json::object event;
+    event["stage"] = "query_expansion";
+    event["data"] = std::move(data);
+    return json::serialize(event);
+}
+
+std::string serialize_keyword(const std::vector<query::SearchHit> &hits, std::uint64_t time_ms) {
+    json::array results;
+    for (const query::SearchHit &hit : hits) {
+        json::object item;
+        item["doc_id"] = hit.doc_id;
+        item["score"] = hit.score;
+        item["snippet"] = hit.snippet;
+        results.emplace_back(std::move(item));
+    }
+    json::object data;
+    data["results"] = std::move(results);
+    data["time_ms"] = time_ms;
+    json::object event;
+    event["stage"] = "keyword_search";
+    event["data"] = std::move(data);
+    return json::serialize(event);
+}
+
+// Подія done — рівно {"stage":"done"} без data (AD-09, OQ-31).
+std::string serialize_done() {
+    json::object event;
+    event["stage"] = "done";
+    return json::serialize(event);
+}
+
+bool is_trim_char(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+
+// Розбирає повідомлення клієнта WS-C-01. Повертає код помилки або порожній рядок, якщо
+// запит валідний; query отримує обрізаний текст. Порядок перевірок — як у REST (06 §4.5).
+std::string parse_client_message(const std::string &text, std::size_t max_query_length,
+                                 std::string *query) {
+    boost::system::error_code ec;
+    const json::value value = json::parse(text, ec);
+    if (ec || !value.is_object()) {
+        return "invalid_json";
+    }
+    const json::object &object = value.as_object();
+    const json::value *field = object.if_contains("query");
+    if (field == nullptr || !field->is_string()) {
+        return "invalid_query";
+    }
+    std::string_view trimmed = field->as_string();
+    while (!trimmed.empty() && is_trim_char(trimmed.front())) {
+        trimmed.remove_prefix(1);
+    }
+    while (!trimmed.empty() && is_trim_char(trimmed.back())) {
+        trimmed.remove_suffix(1);
+    }
+    if (trimmed.empty() || trimmed.size() > max_query_length) {
+        return "invalid_query";
+    }
+    query->assign(trimmed);
+    return {};
+}
+
+} // namespace
+
+WsSearchSession::WsSearchSession(beast::tcp_stream stream, WsSearchDeps deps)
+    : ws_(std::move(stream)), deps_(std::move(deps)) {}
+
+WsSearchSession::~WsSearchSession() {
+    if (deps_.active_sessions) {
+        deps_.active_sessions->fetch_sub(1);
+    }
+}
+
+void WsSearchSession::start(Request request) {
+    // Таймер простою не встановлюється (OQ-12): сесія живе, доки її не закриє клієнт.
+    beast::get_lowest_layer(ws_).expires_never();
+    ws_.async_accept(request, [self = shared_from_this()](beast::error_code ec) {
+        if (!ec) {
+            self->read_next();
+        }
+    });
+}
+
+void WsSearchSession::read_next() {
+    ws_.async_read(buffer_, [self = shared_from_this()](beast::error_code ec, std::size_t) {
+        self->on_read(ec);
+    });
+}
+
+void WsSearchSession::on_read(beast::error_code ec) {
+    if (ec) {
+        // Закриття клієнтом або помилка протоколу: сесія завершується без відповіді.
+        return;
+    }
+    const std::string text = beast::buffers_to_string(buffer_.data());
+    buffer_.consume(buffer_.size());
+    if (!ws_.got_text()) {
+        enqueue(serialize_error("invalid_json", "binary frames are not supported"));
+        read_next();
+        return;
+    }
+    handle_message(text);
+}
+
+void WsSearchSession::handle_message(const std::string &text) {
+    std::string query;
+    const std::string code = parse_client_message(text, deps_.max_query_length, &query);
+    if (!code.empty()) {
+        enqueue(serialize_error(code, code == "invalid_json" ? "message is not a JSON object"
+                                                             : "query must be a non-empty string"));
+        read_next();
+        return;
+    }
+    // Перевірка індексу до виклику Ollama: за відсутності індексу query_expansion не надсилається.
+    if (deps_.index_ready && !deps_.index_ready()) {
+        enqueue(serialize_error("index_not_ready", "index is not built yet"));
+        read_next();
+        return;
+    }
+    if (deps_.expansion) {
+        deps_.expansion(query, [self = shared_from_this(), query](std::vector<std::string> terms) {
+            self->on_expansion(query, std::move(terms));
+        });
+        return;
+    }
+    on_expansion(query, {});
+}
+
+void WsSearchSession::on_expansion(const std::string &query, std::vector<std::string> terms) {
+    enqueue(serialize_expansion(query, terms));
+    run_keyword(query, terms);
+}
+
+void WsSearchSession::run_keyword(const std::string &query, const std::vector<std::string> &terms) {
+    // Пошук виконується у пулі (TCK-019); результат повертається в io_context через post.
+    auto executor = ws_.get_executor();
+    auto work = [self = shared_from_this(), executor, handler = deps_.search, query, terms]() {
+        KeywordOutcome outcome = run_keyword_search(handler, query, terms);
+        net::post(executor, [self, outcome = std::move(outcome)]() mutable {
+            self->on_keyword(std::move(outcome));
+        });
+    };
+    if (deps_.executor) {
+        deps_.executor(std::move(work));
+    } else {
+        work();
+    }
+}
+
+void WsSearchSession::on_keyword(KeywordOutcome outcome) {
+    if (!outcome.ok) {
+        enqueue(serialize_error(outcome.error_code, outcome.message));
+    } else {
+        enqueue(serialize_keyword(outcome.hits, outcome.time_ms));
+        enqueue(serialize_done());
+    }
+    read_next();
+}
+
+void WsSearchSession::enqueue(std::string message) {
+    outgoing_.push_back(std::move(message));
+    if (!writing_) {
+        write_next();
+    }
+}
+
+void WsSearchSession::write_next() {
+    writing_ = true;
+    ws_.async_write(
+        net::buffer(outgoing_.front()),
+        [self = shared_from_this()](beast::error_code ec, std::size_t) { self->on_written(ec); });
+}
+
+void WsSearchSession::on_written(beast::error_code ec) {
+    writing_ = false;
+    if (ec) {
+        // Клієнт зник: черга більше не потрібна.
+        outgoing_.clear();
+        return;
+    }
+    outgoing_.pop_front();
+    if (!outgoing_.empty()) {
+        write_next();
+    }
+}
+
+} // namespace search::server
