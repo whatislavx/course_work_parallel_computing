@@ -36,6 +36,9 @@ struct Config {
     std::size_t search_top_k = 10;       // SEARCH_TOP_K
     std::size_t max_query_length = 256;  // MAX_QUERY_LENGTH, байти
     std::size_t snippet_max_chars = 200; // SNIPPET_MAX_CHARS, байти (OQ-05)
+    // Розширення (OQ-14): значення тимчасові, до затвердження.
+    std::size_t ollama_timeout_ms = 5000; // OLLAMA_TIMEOUT_MS
+    std::size_t max_expanded_terms = 5;   // MAX_EXPANDED_TERMS
 };
 
 // Розбирає і валідує конфігурацію з довільного джерела (для тестів і для оточення).

@@ -25,7 +25,13 @@ using OllamaCheck = std::function<void(std::function<void(bool)>)>;
 using IndexStarter = std::function<bool(std::size_t threads, index::BuildCallback done)>;
 
 // EP-03: пошук за запитом; кидає query::IndexNotReadyError, якщо індексу немає.
-using SearchHandler = std::function<std::vector<query::SearchHit>(std::string_view query)>;
+using SearchHandler = std::function<std::vector<query::SearchHit>(
+    std::string_view query, const std::vector<std::string> &extra_terms)>;
+
+// EP-03, mode "expanded": асинхронно отримує розширені терми і викликає done рівно один раз
+// (порожній список — пошук без розширення, FR-021).
+using ExpansionHandler =
+    std::function<void(std::string query, std::function<void(std::vector<std::string>)> done)>;
 
 struct ServerOptions {
     std::uint16_t port = 8080; // 0 — операційна система обирає порт (для тестів)
@@ -40,6 +46,7 @@ struct ServerOptions {
 
     // EP-03: порожньо = 500 internal_error.
     SearchHandler search_handler;
+    ExpansionHandler expansion_handler; // порожньо = розширення вимкнено (лише keyword)
     std::size_t max_query_length = 256; // MAX_QUERY_LENGTH
 
     // EP-04: статистика активного індексу. Порожньо = нулі (до першої побудови).

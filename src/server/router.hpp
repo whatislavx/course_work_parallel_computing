@@ -30,6 +30,7 @@ bool is_index_request(const Request &request);
 // Тіло EP-03 після розбору.
 struct SearchRequest {
     std::string query; // обрізано пробіли, довжина ≥ 1 і ≤ max_query_length байт
+    bool expanded = false; // mode == "expanded": розширення через Ollama (OQ-02)
 };
 
 // Розбирає тіло EP-03 або повертає готову відповідь 400 (invalid_json, invalid_query,

@@ -100,11 +100,12 @@ std::variant<SearchRequest, Response> parse_search_body(std::string_view body,
     if (mode_field == object.end() || !mode_field->value().is_string()) {
         return error_response(bh::status::bad_request, "invalid_mode", "mode must be a string");
     }
-    // 06 §2.4 і BDD: unsupported_mode — будь-яке рядкове значення, крім підтриманого.
-    if (mode_field->value().as_string() != "keyword") {
+    // 06 §2.4 і BDD: unsupported_mode — будь-яке рядкове значення, крім підтриманих.
+    const std::string_view mode = mode_field->value().as_string();
+    if (mode != "keyword" && mode != "expanded") {
         return error_response(bh::status::bad_request, "unsupported_mode", "mode is not supported");
     }
-    return SearchRequest{std::string(trimmed)};
+    return SearchRequest{std::string(trimmed), mode == "expanded"};
 }
 
 Response search_response(const std::vector<query::SearchHit> &hits, std::uint64_t time_ms) {

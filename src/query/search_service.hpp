@@ -43,8 +43,10 @@ class SearchService {
                   SearchOptions options);
 
     // Кидає IndexNotReadyError, якщо активного індексу немає. Порожній після токенізації
-    // запит дає порожній результат.
-    std::vector<SearchHit> search(std::string_view query) const;
+    // запит дає порожній результат. extra_terms — розширені терми (OQ-04: та сама вага);
+    // вони беруть участь у ранжуванні, але не в snippet (OQ-05: для REST лише терми запиту).
+    std::vector<SearchHit> search(std::string_view query,
+                                  const std::vector<std::string> &extra_terms = {}) const;
 
   private:
     SnapshotProvider snapshot_provider_;
