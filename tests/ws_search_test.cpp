@@ -2,6 +2,7 @@
 // Перевіряють рукостискання, порядок етапів query_expansion → keyword_search → done, валідацію
 // повідомлень, перевірку індексу до розширення і fallback розширення (FR-021, AC-021.1).
 #include "index/index_manager.hpp"
+#include "pool/thread_pool.hpp"
 #include "query/search_service.hpp"
 #include "server/http_server.hpp"
 
@@ -9,6 +10,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/json.hpp>
 #include <gtest/gtest.h>
@@ -28,6 +30,7 @@
 namespace {
 
 namespace beast = boost::beast;
+namespace http = beast::http;
 namespace websocket = beast::websocket;
 namespace net = boost::asio;
 namespace json = boost::json;
@@ -62,7 +65,7 @@ class WsSearchTest : public ::testing::Test {
     }
 
     // Запускає сервер. build=false — індекс не побудовано (index_not_ready).
-    void start(bool build) {
+    void start(bool build, bool use_pool = false) {
         if (build) {
             ASSERT_TRUE(
                 manager_.start_build(dataset_, 2, [](const search::index::BuildResult &) {}));
@@ -92,6 +95,13 @@ class WsSearchTest : public ::testing::Test {
             timer->async_wait(
                 [timer, terms = expansion_terms_, done](beast::error_code) { done(terms); });
         };
+        if (use_pool) {
+            // Пул пошуку як у продакшні (TCK-019): пошук не виконується в io_context.
+            pool_ = std::make_unique<search::pool::ThreadPool>(4, 64);
+            options.search_executor = [this](std::function<void()> task) {
+                pool_->submit(std::move(task));
+            };
+        }
         server_ = std::make_unique<search::server::HttpServer>(ioc_, options);
         server_->start();
         port_ = server_->port();
@@ -104,6 +114,23 @@ class WsSearchTest : public ::testing::Test {
         ws->next_layer().connect({net::ip::make_address("127.0.0.1"), port_});
         ws->handshake("127.0.0.1", "/ws/search");
         return ws;
+    }
+
+    // Блокуючий REST-клієнт (POST з JSON), окремий io_context для кожного виклику.
+    std::pair<unsigned, std::string> post_json(const std::string &target, const std::string &body) {
+        net::io_context client;
+        tcp::socket socket(client);
+        socket.connect({net::ip::make_address("127.0.0.1"), port_});
+        http::request<http::string_body> req{http::verb::post, target, 11};
+        req.set(http::field::host, "127.0.0.1");
+        req.set(http::field::content_type, "application/json");
+        req.body() = body;
+        req.prepare_payload();
+        http::write(socket, req);
+        beast::flat_buffer buffer;
+        http::response<http::string_body> res;
+        http::read(socket, buffer, res);
+        return {res.result_int(), res.body()};
     }
 
     static json::object read_message(websocket::stream<tcp::socket> &ws) {
@@ -127,6 +154,8 @@ class WsSearchTest : public ::testing::Test {
     std::unique_ptr<search::server::HttpServer> server_;
     std::thread worker_;
     std::uint16_t port_ = 0;
+    // Оголошено останнім: знищується першим, поки пошукові залежності ще живі.
+    std::unique_ptr<search::pool::ThreadPool> pool_;
 };
 
 } // namespace
@@ -297,4 +326,92 @@ TEST_F(WsSearchTest, ClientDisconnectMidPipelineDoesNotAffectOtherClients) {
     EXPECT_EQ(expansion.at("data").as_object().at("original").as_string(), "beta");
     EXPECT_EQ(stage_of(read_message(*client_b)), "keyword_search");
     EXPECT_EQ(stage_of(read_message(*client_b)), "done");
+}
+
+// BDD-CON-02 / NFR-007: повільна Ollama у WS-сесії не блокує REST-пошук іншого клієнта.
+// Затримка D = 1 с; REST має завершитися менш ніж за D/2.
+TEST_F(WsSearchTest, SlowExpansionDoesNotBlockRestSearch) {
+    expansion_delay_ = std::chrono::milliseconds(1000);
+    start(/*build=*/true, /*use_pool=*/true);
+    auto slow = connect();
+    slow->write(net::buffer(std::string(R"({"query": "alpha"})")));
+
+    const auto started = std::chrono::steady_clock::now();
+    const auto [status, body] = post_json("/api/search", R"({"query": "beta", "mode": "keyword"})");
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+
+    EXPECT_EQ(status, 200u);
+    EXPECT_LT(elapsed, std::chrono::milliseconds(500));
+    // Повільний пайплайн усе ще завершується своїми подіями.
+    EXPECT_EQ(stage_of(read_message(*slow)), "query_expansion");
+    EXPECT_EQ(stage_of(read_message(*slow)), "keyword_search");
+    EXPECT_EQ(stage_of(read_message(*slow)), "done");
+}
+
+// BDD-CON-05 / TEST-CONC-04: 8 одночасних WS-сесій; кожна отримує рівно три події і лише
+// власний запит.
+TEST_F(WsSearchTest, EightConcurrentSessionsAreIsolated) {
+    start(/*build=*/true, /*use_pool=*/true);
+    const std::vector<std::string> queries = {"alpha", "beta",  "gamma",      "delta",
+                                              "here",  "words", "alpha beta", "gamma delta"};
+    std::vector<std::vector<std::string>> stages(queries.size());
+    std::vector<std::string> originals(queries.size());
+    std::vector<std::thread> clients;
+    for (std::size_t i = 0; i < queries.size(); ++i) {
+        clients.emplace_back([this, i, &queries, &stages, &originals] {
+            net::io_context ioc;
+            websocket::stream<tcp::socket> ws(ioc);
+            ws.next_layer().connect({net::ip::make_address("127.0.0.1"), port_});
+            ws.handshake("127.0.0.1", "/ws/search");
+            ws.write(net::buffer(std::string(R"({"query": ")") + queries[i] + R"("})"));
+            for (int n = 0; n < 3; ++n) {
+                const auto message = read_message(ws);
+                stages[i].push_back(stage_of(message));
+                if (stage_of(message) == "query_expansion") {
+                    originals[i] =
+                        std::string(message.at("data").as_object().at("original").as_string());
+                }
+            }
+        });
+    }
+    for (std::thread &client : clients) {
+        client.join();
+    }
+    for (std::size_t i = 0; i < queries.size(); ++i) {
+        EXPECT_EQ(stages[i],
+                  (std::vector<std::string>{"query_expansion", "keyword_search", "done"}))
+            << "сесія " << i;
+        EXPECT_EQ(originals[i], queries[i]) << "сесія " << i;
+    }
+}
+
+// BDD-CON-06 / TEST-CONC-06: 4 сесії з затримкою Ollama 1 с завершуються паралельно (менш ніж за
+// 4 с від початку), а не по черзі.
+TEST_F(WsSearchTest, ParallelPipelinesFinishWithinSerialBudget) {
+    expansion_delay_ = std::chrono::milliseconds(1000);
+    start(/*build=*/true, /*use_pool=*/true);
+    std::vector<char> finished(4, 0); // не vector<bool>: біти сусідніх елементів ділять слово
+    std::vector<std::thread> clients;
+    const auto started = std::chrono::steady_clock::now();
+    for (std::size_t i = 0; i < finished.size(); ++i) {
+        clients.emplace_back([this, i, &finished] {
+            net::io_context ioc;
+            websocket::stream<tcp::socket> ws(ioc);
+            ws.next_layer().connect({net::ip::make_address("127.0.0.1"), port_});
+            ws.handshake("127.0.0.1", "/ws/search");
+            ws.write(net::buffer(std::string(R"({"query": "alpha"})")));
+            for (int n = 0; n < 3; ++n) {
+                read_message(ws);
+            }
+            finished[i] = 1;
+        });
+    }
+    for (std::thread &client : clients) {
+        client.join();
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    for (std::size_t i = 0; i < finished.size(); ++i) {
+        EXPECT_TRUE(finished[i]) << "сесія " << i;
+    }
+    EXPECT_LT(elapsed, std::chrono::seconds(4));
 }
