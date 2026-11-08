@@ -41,8 +41,10 @@ int main() {
             std::max<std::size_t>(1, std::thread::hardware_concurrency());
         const std::size_t search_threads =
             cfg.search_worker_threads == 0 ? logical_cpus : cfg.search_worker_threads;
-        search::pool::ThreadPool search_pool(search_threads, cfg.max_concurrent_connections);
+        // search_service оголошено до пулу: пул знищується раніше і дочищає чергу, поки сервіс
+        // ще живий (інакше задачі звертаються до знищеного об'єкта).
         std::unique_ptr<search::query::SearchService> search_service;
+        search::pool::ThreadPool search_pool(search_threads, cfg.max_concurrent_connections);
 
         search::server::ServerOptions options;
         options.port = cfg.port;

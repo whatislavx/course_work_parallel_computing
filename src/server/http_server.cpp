@@ -225,12 +225,15 @@ class Session : public std::enable_shared_from_this<Session> {
         // Пошук у пулі; результат повертаємо в io_context через post. Сесія тримається живою
         // копією self, доки відповідь не надіслано.
         search_executor_(
-            [self = shared_from_this(), handler = search_handler_, text, extra_terms]() {
+            [self = shared_from_this(), handler = search_handler_, text, extra_terms]() mutable {
                 Response response = run_search(handler, text, extra_terms);
-                net::post(self->stream_.get_executor(),
-                          [self, response = std::move(response)]() mutable {
-                              self->send(std::move(response));
-                          });
+                // Передаємо володіння сесією в io_context: після post копія в задачі пулу порожня,
+                // і ~Session виконується лише в потоці io_context, а не в робочому потоці пулу.
+                auto executor = self->stream_.get_executor();
+                net::post(executor, [self = std::move(self),
+                                     response = std::move(response)]() mutable {
+                    self->send(std::move(response));
+                });
             });
     }
 
