@@ -111,8 +111,8 @@ TEST(ExpansionTerms, MultiWordFragmentsAreDropped) {
 }
 
 TEST(ExpansionTerms, PreambleDoesNotConsumeTermSlots) {
-    const auto terms = parse_expansion_terms(
-        "Here are the keywords:\ngamma\ndelta\nepsilon\nzeta", {"alpha"}, 2);
+    const auto terms =
+        parse_expansion_terms("Here are the keywords:\ngamma\ndelta\nepsilon\nzeta", {"alpha"}, 2);
     EXPECT_EQ(terms, (std::vector<std::string>{"gamma", "delta"}));
 }
 
