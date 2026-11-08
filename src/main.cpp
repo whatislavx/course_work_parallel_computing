@@ -22,13 +22,7 @@
 #include <string_view>
 #include <thread>
 
-namespace {
-
-// Пауза після початку зупинки: час на відправлення WS-закриттів 1001 до ioc.stop().
-// Тимчасова константа; SHUTDOWN_TIMEOUT_MS з NFR-026 ще не винесено в конфігурацію.
-constexpr std::chrono::milliseconds kShutdownGraceMs{1000};
-
-} // namespace
+namespace {} // namespace
 
 int main() {
     try {
@@ -113,12 +107,13 @@ int main() {
         // активує індекс; WS-сесії отримують закриття 1001; після короткої паузи io_context
         // зупиняється. Пауза дає змогу закриттям відправитися до виходу.
         boost::asio::steady_timer shutdown_timer(ioc);
+        const auto shutdown_timeout = std::chrono::milliseconds(cfg.shutdown_timeout_ms);
         boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
-        signals.async_wait([&server, &ioc, &index_manager,
-                            &shutdown_timer](const boost::system::error_code &, int) {
+        signals.async_wait([&server, &ioc, &index_manager, &shutdown_timer,
+                            &shutdown_timeout](const boost::system::error_code &, int) {
             index_manager.request_cancel();
             server.stop();
-            shutdown_timer.expires_after(kShutdownGraceMs);
+            shutdown_timer.expires_after(shutdown_timeout);
             shutdown_timer.async_wait([&ioc](const boost::system::error_code &) { ioc.stop(); });
         });
 

@@ -85,6 +85,9 @@ Config parse_config(const EnvLookup &lookup) {
     if (const auto v = lookup("REQUEST_TIMEOUT_MS")) {
         cfg.request_timeout_ms = parse_integer<std::size_t>("REQUEST_TIMEOUT_MS", *v, 1, 3600000);
     }
+    if (const auto v = lookup("SHUTDOWN_TIMEOUT_MS")) {
+        cfg.shutdown_timeout_ms = parse_integer<std::size_t>("SHUTDOWN_TIMEOUT_MS", *v, 1, 600000);
+    }
     if (const auto v = lookup("OLLAMA_URL")) {
         cfg.ollama_url = parse_non_empty("OLLAMA_URL", *v);
     }
