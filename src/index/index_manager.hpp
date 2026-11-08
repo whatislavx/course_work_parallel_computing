@@ -2,6 +2,7 @@
 
 #include "index/shared_inverted_index.hpp"
 
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -46,8 +47,9 @@ using BuildCallback = std::function<void(const BuildResult &)>;
 //
 // Потокова безпека: усі методи можна викликати з будь-якого потоку. Guarded by mutex_:
 // state_, active_, stats_, last_error_, building_, builder_.
-// Відоме обмеження: побудова не скасовується. Деструктор чекає її завершення, тож зупинка
-// процесу під час побудови триває до кінця побудови (узгоджено, без cooperative stop-flag).
+// Скасування (TCK-039, OQ-32) термінальне: після request_cancel будь-яка побудова, що триває
+// або стартує пізніше, завершується з кодом "build_cancelled" і не активує індекс. Деструктор
+// викликає request_cancel перед приєднанням потоку, тож зупинка процесу не чекає повної побудови.
 class IndexManager {
   public:
     IndexManager() = default;
@@ -67,6 +69,10 @@ class IndexManager {
     // Блокується, доки побудова не завершиться (стан building_ скинуто). Callback on_done може
     // ще виконуватися. Не викликати з on_done: callback виконується в потоці побудови.
     void wait_for_build();
+
+    // Незворотно сигналізує про зупинку: побудова кооперативно переривається, індекс не
+    // активується. Безпечно викликати з будь-якого потоку, включно з обробником сигналу.
+    void request_cancel();
 
     IndexState state() const;
 
@@ -91,6 +97,9 @@ class IndexManager {
     IndexStats stats_;
     std::optional<std::string> last_error_;
     bool building_ = false;
+    // Сигнал зупинки: встановлюється один раз і не скидається. Default seq_cst (достатньо для
+    // одного прапорця без додаткових даних, які треба публікувати разом із ним).
+    std::atomic<bool> cancel_requested_{false};
     std::condition_variable idle_cv_; // сигналізує про building_ == false
     std::thread builder_;
 };

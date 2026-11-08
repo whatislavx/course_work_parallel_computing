@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -12,6 +13,7 @@
 namespace {
 
 using search::index::build_index;
+using search::index::BuildCancelledError;
 using search::index::Document;
 using search::index::IndexBuildError;
 using search::index::InvertedIndex;
@@ -132,4 +134,21 @@ TEST(IndexBuilder, FailureMessageCarriesErrorCodePrefix) {
         EXPECT_NE(message.find("index_build_failed"), std::string::npos);
         EXPECT_NE(message.find("disk gone"), std::string::npos);
     }
+}
+
+// TCK-039 (OQ-32): встановлений до початку сигнал скасування перериває побудову і не повертає
+// індекс; це не збій, тож виняток інший.
+TEST(IndexBuilder, PreSetCancelFlagAbortsBuildWithCancelledError) {
+    const auto docs = make_corpus(100, 2);
+    std::atomic<bool> cancel{true};
+    EXPECT_THROW(build_index(docs, 4, tokenize, &cancel), BuildCancelledError);
+}
+
+// Без встановленого сигналу той самий виклик дає повний індекс (регресія від TCK-039).
+TEST(IndexBuilder, UnsetCancelFlagKeepsBuildComplete) {
+    const auto docs = make_corpus(100, 2);
+    std::atomic<bool> cancel{false};
+    const auto index = build_index(docs, 4, tokenize, &cancel);
+    ASSERT_NE(index, nullptr);
+    EXPECT_EQ(index->document_count(), docs.size());
 }

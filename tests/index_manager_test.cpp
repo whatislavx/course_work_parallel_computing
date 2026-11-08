@@ -6,6 +6,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -177,4 +178,41 @@ TEST(IndexManagerReviewFixes, StartBuildFromOwnCallbackThrowsLogicError) {
     }
     EXPECT_TRUE(threw.load());
     std::filesystem::remove_all(dir);
+}
+
+// TCK-039 (OQ-32): зупинка до старту побудови — побудова скасовується з кодом build_cancelled,
+// активний індекс не створюється, стан лишається Empty.
+TEST(IndexManagerShutdown, CancelledBuildDoesNotActivateIndex) {
+    TempDataset data;
+    data.write("a.txt", "alpha beta\n");
+    IndexManager manager;
+    manager.request_cancel();
+
+    std::promise<search::index::BuildResult> done;
+    auto future = done.get_future();
+    ASSERT_TRUE(manager.start_build(
+        data.path(), 2, [&done](const search::index::BuildResult &r) { done.set_value(r); }));
+    const auto result = future.get();
+    manager.wait_for_build();
+
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(result.error_code, "build_cancelled");
+    EXPECT_EQ(manager.state(), IndexState::Empty);
+    EXPECT_EQ(manager.snapshot(), nullptr);
+}
+
+// TCK-039: скасування під час першої побудови не лишає стан Building.
+TEST(IndexManagerShutdown, CancelDuringBuildReturnsToEmptyAndUnblocksWaiters) {
+    TempDataset data;
+    for (int i = 0; i < 2000; ++i) {
+        data.write("d" + std::to_string(i) + ".txt", "alpha beta gamma delta\n");
+    }
+    IndexManager manager;
+    ASSERT_TRUE(manager.start_build(data.path(), 2));
+    manager.request_cancel();
+    manager.wait_for_build();
+
+    EXPECT_NE(manager.state(), IndexState::Building);
+    EXPECT_EQ(manager.state(), IndexState::Empty);
+    EXPECT_EQ(manager.snapshot(), nullptr);
 }

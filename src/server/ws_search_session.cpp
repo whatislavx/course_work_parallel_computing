@@ -259,6 +259,10 @@ void WsSearchSession::on_keyword(KeywordOutcome outcome) {
 }
 
 void WsSearchSession::enqueue(std::string message) {
+    // Після початку закриття нові кадри не відправляємо: закриття має пріоритет (TCK-039).
+    if (close_requested_) {
+        return;
+    }
     outgoing_.push_back(std::move(message));
     if (!writing_) {
         write_next();
@@ -280,9 +284,58 @@ void WsSearchSession::on_written(beast::error_code ec) {
         return;
     }
     outgoing_.pop_front();
+    if (close_requested_) {
+        // Запис завершився до запиту на закриття: решту черги відкидаємо, закриваємо з 1001.
+        begin_close();
+        return;
+    }
     if (!outgoing_.empty()) {
         write_next();
     }
+}
+
+void WsSearchSession::close_going_away() {
+    if (close_requested_) {
+        return;
+    }
+    close_requested_ = true;
+    // Під час запису закриття починає on_written, щоб не було двох одночасних записів.
+    if (!writing_) {
+        begin_close();
+    }
+}
+
+void WsSearchSession::begin_close() {
+    outgoing_.clear();
+    writing_ = true;
+    ws_.async_close(beast::websocket::close_code::going_away,
+                    [self = shared_from_this()](beast::error_code) { self->writing_ = false; });
+}
+
+void WsSessionRegistry::add(const std::shared_ptr<WsSearchSession> &session) {
+    prune();
+    sessions_.push_back(session);
+}
+
+void WsSessionRegistry::close_all_going_away() {
+    prune();
+    for (const std::weak_ptr<WsSearchSession> &weak : sessions_) {
+        if (auto session = weak.lock()) {
+            session->close_going_away();
+        }
+    }
+}
+
+std::size_t WsSessionRegistry::open_count() {
+    prune();
+    return sessions_.size();
+}
+
+void WsSessionRegistry::prune() {
+    sessions_.erase(
+        std::remove_if(sessions_.begin(), sessions_.end(),
+                       [](const std::weak_ptr<WsSearchSession> &weak) { return weak.expired(); }),
+        sessions_.end());
 }
 
 } // namespace search::server
