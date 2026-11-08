@@ -78,3 +78,23 @@ TEST(Config, RequestTimeoutDefaultAndOverride) {
     EXPECT_EQ(parse_config(env_from({{"REQUEST_TIMEOUT_MS", "500"}})).request_timeout_ms, 500U);
     EXPECT_THROW(parse_config(env_from({{"REQUEST_TIMEOUT_MS", "0"}})), ConfigError);
 }
+
+TEST(Config, MaxIndexThreadsDefaultsAndOverrides) {
+    EXPECT_EQ(parse_config(env_from({})).max_index_threads, 64U);
+    EXPECT_EQ(parse_config(env_from({{"MAX_INDEX_THREADS", "16"}})).max_index_threads, 16U);
+}
+
+TEST(Config, MaxIndexThreadsOutOfRangeIsRejectedWithVariableName) {
+    try {
+        parse_config(env_from({{"MAX_INDEX_THREADS", "0"}}));
+        FAIL() << "очікувався ConfigError";
+    } catch (const ConfigError &e) {
+        EXPECT_NE(std::string(e.what()).find("MAX_INDEX_THREADS"), std::string::npos);
+    }
+}
+
+TEST(Config, DefaultIndexThreadsAboveMaximumIsRejected) {
+    EXPECT_THROW(
+        parse_config(env_from({{"MAX_INDEX_THREADS", "4"}, {"DEFAULT_INDEX_THREADS", "8"}})),
+        ConfigError);
+}

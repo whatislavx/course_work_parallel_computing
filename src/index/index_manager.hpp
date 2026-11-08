@@ -46,6 +46,8 @@ using BuildCallback = std::function<void(const BuildResult &)>;
 //
 // Потокова безпека: усі методи можна викликати з будь-якого потоку. Guarded by mutex_:
 // state_, active_, stats_, last_error_, building_, builder_.
+// Відоме обмеження: побудова не скасовується. Деструктор чекає її завершення, тож зупинка
+// процесу під час побудови триває до кінця побудови (узгоджено, без cooperative stop-flag).
 class IndexManager {
   public:
     IndexManager() = default;

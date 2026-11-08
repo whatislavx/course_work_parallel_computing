@@ -52,6 +52,10 @@ int main() {
         search::server::HttpServer server(ioc, options);
         server.start();
 
+        // Відома обмеження (узгоджено): під час побудови індексу SIGTERM зупиняє io_context,
+        // але деструктор IndexManager чекає завершення побудови без скасування. Процес
+        // завершується після неї; у Docker Compose stop_grace_period має бути не меншим за
+        // очікувану тривалість побудови (див. README, OQ-20).
         boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
         signals.async_wait([&server, &ioc](const boost::system::error_code &, int) {
             server.stop();
