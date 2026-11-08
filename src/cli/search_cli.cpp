@@ -20,8 +20,6 @@ namespace http = beast::http;
 namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
-constexpr std::string_view kUsage = "usage: search [--url URL] \"query\"\n";
-
 // Результат HTTP-запиту: статус або причина відсутності відповіді.
 struct HttpResult {
     bool reached = false; // з'єднання встановлено і відповідь прочитано
@@ -82,16 +80,19 @@ std::string error_message(const HttpResult &result) {
 
 std::string parse_arguments(const std::vector<std::string> &args, CliOptions *options) {
     std::optional<std::string> query;
+    bool options_ended = false;
     for (std::size_t i = 0; i < args.size(); ++i) {
         const std::string &arg = args[i];
-        if (arg == "--help" || arg == "-h") {
+        if (!options_ended && arg == "--") {
+            options_ended = true;
+        } else if (!options_ended && (arg == "--help" || arg == "-h")) {
             options->help = true;
-        } else if (arg == "--url") {
+        } else if (!options_ended && arg == "--url") {
             if (i + 1 >= args.size()) {
                 return "--url requires a value";
             }
             options->server_url = args[++i];
-        } else if (!arg.empty() && arg[0] == '-') {
+        } else if (!options_ended && !arg.empty() && arg[0] == '-') {
             return "unknown option: " + arg;
         } else {
             if (query) {
@@ -105,6 +106,9 @@ std::string parse_arguments(const std::vector<std::string> &args, CliOptions *op
     }
     if (!query) {
         return "missing query argument";
+    }
+    if (query->find_first_not_of(" \t\r\n") == std::string::npos) {
+        return "query must not be empty";
     }
     options->query = *query;
     return {};
@@ -132,7 +136,8 @@ std::optional<ServerAddress> parse_server_url(std::string_view url) {
     return address;
 }
 
-std::string format_results(std::string_view response_body, std::string_view query) {
+// Повертає std::nullopt, якщо відповідь не відповідає схемі {"results":[{doc_id,score,snippet}]}.
+std::optional<std::string> format_results(std::string_view response_body, std::string_view query) {
     boost::system::error_code ec;
     const boost::json::value value = boost::json::parse(response_body, ec);
     std::string text;
@@ -143,17 +148,30 @@ std::string format_results(std::string_view response_body, std::string_view quer
             results = &array->as_array();
         }
     }
-    if (results == nullptr || results->empty()) {
+    if (results == nullptr) {
+        return std::nullopt;
+    }
+    if (results->empty()) {
         text = "No results found for \"" + std::string(query) + "\".\n";
         return text;
     }
     std::size_t rank = 1;
     for (const boost::json::value &item : *results) {
+        if (!item.is_object()) {
+            return std::nullopt;
+        }
         const boost::json::object &hit = item.as_object();
+        const auto *score_value = hit.if_contains("score");
+        const auto *doc_id_value = hit.if_contains("doc_id");
+        const auto *snippet_value = hit.if_contains("snippet");
+        if (score_value == nullptr || !score_value->is_number() || doc_id_value == nullptr ||
+            !doc_id_value->is_string() || snippet_value == nullptr || !snippet_value->is_string()) {
+            return std::nullopt;
+        }
         char score[32];
-        std::snprintf(score, sizeof score, "%.4f", hit.at("score").to_number<double>());
-        text += std::to_string(rank++) + ". " + std::string(hit.at("doc_id").as_string()) +
-                " (score " + score + ")\n   " + std::string(hit.at("snippet").as_string()) + "\n";
+        std::snprintf(score, sizeof score, "%.4f", score_value->to_number<double>());
+        text += std::to_string(rank++) + ". " + std::string(doc_id_value->as_string()) +
+                " (score " + score + ")\n   " + std::string(snippet_value->as_string()) + "\n";
     }
     return text;
 }
@@ -174,7 +192,12 @@ int run_search(const CliOptions &options, std::ostream &out, std::ostream &err) 
         err << "error: " << error_message(result) << '\n';
         return 1;
     }
-    out << format_results(result.body, options.query);
+    const std::optional<std::string> text = format_results(result.body, options.query);
+    if (!text) {
+        err << "error: malformed response from search server\n";
+        return 1;
+    }
+    out << *text;
     return 0;
 }
 

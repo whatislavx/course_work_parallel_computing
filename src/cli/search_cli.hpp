@@ -29,7 +29,7 @@ struct ServerAddress {
 std::optional<ServerAddress> parse_server_url(std::string_view url);
 
 // Текст виводу для тіла 200 EP-03: по одному результату на блок або повідомлення про відсутність.
-std::string format_results(std::string_view response_body, std::string_view query);
+std::optional<std::string> format_results(std::string_view response_body, std::string_view query);
 
 // Виконує пошук і пише результат у out, помилки — у err. Повертає код виходу (FR-030):
 // 0 — успіх (у тому числі порожній результат), 1 — помилка сервера чи недоступність,

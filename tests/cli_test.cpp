@@ -177,3 +177,27 @@ TEST(CliRun, UnavailableServerExitsNonZero) {
 }
 
 } // namespace
+
+namespace {
+
+TEST(CliArguments, RejectsEmptyOrBlankQuery) {
+    search::cli::CliOptions options;
+    EXPECT_FALSE(search::cli::parse_arguments({""}, &options).empty());
+    EXPECT_FALSE(search::cli::parse_arguments({"   "}, &options).empty());
+}
+
+TEST(CliArguments, DoubleDashEndsOptionsSoDashQueryIsAccepted) {
+    search::cli::CliOptions options;
+    EXPECT_EQ(search::cli::parse_arguments({"--", "-foo"}, &options), "");
+    EXPECT_EQ(options.query, "-foo");
+}
+
+TEST(CliFormat, MalformedResultElementIsRejectedNotThrown) {
+    EXPECT_FALSE(search::cli::format_results(R"({"results":[1]})", "x").has_value());
+    EXPECT_FALSE(search::cli::format_results(
+                     R"({"results":[{"doc_id":"a","score":"x","snippet":"s"}]})", "x")
+                     .has_value());
+    EXPECT_FALSE(search::cli::format_results(R"({"results":[{"doc_id":"a"}]})", "x").has_value());
+}
+
+} // namespace
