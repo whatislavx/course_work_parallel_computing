@@ -28,3 +28,11 @@ target_link_libraries(search_core PUBLIC search_warnings Boost::json Threads::Th
 
 add_executable(search_server main.cpp)
 target_link_libraries(search_server PRIVATE search_core)
+
+# Консольний клієнт (TCK-025, OQ-16 — рекомендований варіант: C++ і Boost.Beast).
+add_library(search_cli_core STATIC cli/search_cli.cpp)
+target_include_directories(search_cli_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(search_cli_core PUBLIC search_warnings Boost::json Threads::Threads)
+
+add_executable(search cli/main.cpp)
+target_link_libraries(search PRIVATE search_cli_core)
