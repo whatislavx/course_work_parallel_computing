@@ -9,6 +9,7 @@
 #include <boost/json.hpp>
 
 #include <algorithm>
+#include <iostream>
 #include <memory>
 #include <utility>
 
@@ -220,11 +221,18 @@ ExpansionFunction make_expansion_handler(net::io_context &ioc, Endpoint endpoint
         generate(
             ioc, endpoint, build_expansion_prompt(query, max_terms), timeout,
             [query_terms, max_terms, done = std::move(done)](std::optional<std::string> response) {
+                // FR-021: збій логується; пошук продовжується без розширення.
                 if (!response) {
+                    std::cerr << "ollama: expansion unavailable, keyword search only\n";
                     done({});
                     return;
                 }
-                done(parse_expansion_terms(*response, query_terms, max_terms));
+                std::vector<std::string> terms =
+                    parse_expansion_terms(*response, query_terms, max_terms);
+                if (terms.empty()) {
+                    std::cerr << "ollama: no usable expansion terms, keyword search only\n";
+                }
+                done(std::move(terms));
             });
     };
 }
