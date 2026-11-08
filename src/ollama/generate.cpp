@@ -172,9 +172,8 @@ std::string single_word_candidate(std::string_view fragment) {
         return {};
     }
     const std::string &word = words.front();
-    const bool all_digits = std::all_of(word.begin(), word.end(), [](char c) {
-        return c >= '0' && c <= '9';
-    });
+    const bool all_digits =
+        std::all_of(word.begin(), word.end(), [](char c) { return c >= '0' && c <= '9'; });
     return all_digits ? std::string() : word;
 }
 
