@@ -1,5 +1,7 @@
 #pragma once
 
+#include "index/index_manager.hpp"
+
 #include <boost/beast/http.hpp>
 
 #include <cstddef>
@@ -25,6 +27,12 @@ bool is_index_request(const Request &request);
 // Порожнє тіло чи відсутнє поле threads → default_threads.
 std::variant<std::size_t, Response>
 parse_index_body(std::string_view body, std::size_t default_threads, std::size_t max_threads);
+
+// Чи є запит GET /api/stats (тіло відповіді формує сесія зі статистики індексу).
+bool is_stats_request(const Request &request);
+
+// Відповідь EP-04 з поточною статистикою індексу (06 EP-04).
+Response stats_response(const index::IndexStats &stats);
 
 // Маршрутизація за шляхом і методом (06 §2.3). ollama_available — результат перевірки Ollama
 // для EP-01; для інших ендпоінтів не використовується. Розмір тіла перевіряє сесія.

@@ -49,6 +49,8 @@ int main() {
             return index_manager.start_build(dataset_dir, threads, std::move(done));
         };
 
+        options.stats_provider = [&index_manager] { return index_manager.stats(); };
+
         search::server::HttpServer server(ioc, options);
         server.start();
 

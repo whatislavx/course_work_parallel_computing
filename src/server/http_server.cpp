@@ -32,7 +32,7 @@ class Session : public std::enable_shared_from_this<Session> {
         : stream_(std::move(socket)), max_body_bytes_(options.max_request_body_bytes),
           timeout_(options.request_timeout), ollama_check_(options.ollama_check),
           index_start_(options.index_start), default_index_threads_(options.default_index_threads),
-          max_index_threads_(options.max_index_threads) {}
+          max_index_threads_(options.max_index_threads), stats_provider_(options.stats_provider) {}
 
     void start() { read_header(); }
 
@@ -75,6 +75,10 @@ class Session : public std::enable_shared_from_this<Session> {
     void dispatch(bool ollama_available) {
         if (is_index_request(parser_.get())) {
             read_index_body();
+            return;
+        }
+        if (is_stats_request(parser_.get())) {
+            send(stats_response(stats_provider_ ? stats_provider_() : index::IndexStats{}));
             return;
         }
         Response response = route(parser_.get(), ollama_available);
@@ -248,6 +252,7 @@ class Session : public std::enable_shared_from_this<Session> {
     IndexStarter index_start_;
     std::size_t default_index_threads_;
     std::size_t max_index_threads_;
+    std::function<index::IndexStats()> stats_provider_;
     std::array<char, 4096> scratch_{};
     std::size_t drained_ = 0;
 };
