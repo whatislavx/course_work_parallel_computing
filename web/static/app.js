@@ -1,5 +1,5 @@
-// Web UI пошуку (TCK-026, FR-031…FR-032). Логіка подання винесена в чисті функції, щоб її можна
-// було тестувати без браузера. Текст із сервера вставляється лише через textContent.
+// Web UI Sherlok (TCK-026, FR-031…FR-034). Логіка подання винесена в чисті функції, щоб її можна
+// було тестувати без браузера (`node --test web/test`). Текст із сервера вставляється лише через textContent.
 
 // Порожній запит не надсилається; користувач бачить підказку (BDD-WEB-05).
 export function validateQuery(raw) {
@@ -50,14 +50,45 @@ export function classifyStage(event) {
   }
 }
 
+
+// Порядок етапів для смуги прогресу. Назви — для користувача, без внутрішніх деталей (FR-033).
+export const STAGE_ORDER = ['query_expansion', 'keyword_search', 'done'];
+export const STAGE_LABELS = {
+  query_expansion: 'Уточнення запиту',
+  keyword_search: 'Пошук документів',
+  done: 'Готово',
+};
+
+// Стан кожного етапу за останнім отриманим: пройдені — done, поточний — active, решта — pending.
+export function progressStates(lastStage) {
+  const index = STAGE_ORDER.indexOf(lastStage);
+  return STAGE_ORDER.map((stage, position) => {
+    let state = 'pending';
+    if (lastStage === 'done' || (index >= 0 && position < index)) {
+      state = 'done';
+    } else if (index >= 0 && position === index) {
+      state = 'active';
+    }
+    return { stage, label: STAGE_LABELS[stage], state };
+  });
+}
+
+// Елементи необов'язкові: на головній сторінці немає списку результатів.
 function render(model) {
   const status = document.getElementById('status');
   const list = document.getElementById('results');
   const hint = document.getElementById('hint');
+  if (hint) {
+    hint.textContent = model.hint ?? '';
+  }
+  if (status) {
+    status.className = model.error ? 'error' : '';
+    status.textContent = model.status ?? '';
+  }
+  if (!list) {
+    return;
+  }
   list.replaceChildren();
-  hint.textContent = model.hint ?? '';
-  status.className = model.error ? 'error' : '';
-  status.textContent = model.status ?? '';
   for (const item of model.items ?? []) {
     const li = document.createElement('li');
     const title = document.createElement('div');
@@ -65,7 +96,7 @@ function render(model) {
     title.textContent = item.docId;
     const score = document.createElement('span');
     score.className = 'score';
-    score.textContent = ` (score ${item.score})`;
+    score.textContent = item.score;
     title.append(score);
     const snippet = document.createElement('p');
     snippet.className = 'snippet';
@@ -73,6 +104,23 @@ function render(model) {
     li.append(title, snippet);
     list.append(li);
   }
+}
+
+// Смуга прогресу видима лише під час пошуку; null — усі етапи очікують.
+function renderProgress(lastStage, visible = true) {
+  const list = document.getElementById('progress');
+  if (!list) {
+    return;
+  }
+  list.hidden = !visible;
+  list.replaceChildren(
+    ...progressStates(lastStage).map((item) => {
+      const li = document.createElement('li');
+      li.textContent = item.label;
+      li.dataset.state = item.state;
+      return li;
+    }),
+  );
 }
 
 function wsUrl() {
@@ -101,10 +149,14 @@ function runSearch(query) {
       if (model) {
         render(model);
       }
+      if (model?.error) {
+        renderProgress(null, false);
+      }
     }
     socket.close();
   };
   render({ status: 'Пошук…' });
+  renderProgress(null);
   socket.addEventListener('open', () => socket.send(JSON.stringify({ query })));
   socket.addEventListener('message', (message) => {
     if (!isCurrent()) {
@@ -119,14 +171,20 @@ function runSearch(query) {
     }
     const model = classifyStage(event);
     if (model.type === 'expansion') {
-      render({ status: 'Розширення запиту…' });
+      renderProgress('query_expansion');
     } else if (model.type === 'results') {
+      renderProgress('keyword_search');
       received = true;
-      render({ status: model.empty ? 'Нічого не знайдено.' : '', items: model.items });
+      const count = model.items.length;
+      render({
+        status: model.empty ? 'Нічого не знайдено.' : `Знайдено: ${count}`,
+        items: model.items,
+      });
     } else if (model.type === 'error') {
       finish({ status: model.message, error: true });
     } else if (model.type === 'done') {
       if (received) {
+        renderProgress('done');
         finish(null);
       } else {
         finish({ status: 'Відповідь неповна: результатів не отримано.', error: true });
@@ -149,6 +207,17 @@ function runSearch(query) {
 function init() {
   const form = document.getElementById('search-form');
   const input = document.getElementById('query');
+  if (!form || !input) {
+    return;
+  }
+  const onResultsPage = document.body?.dataset?.page === 'results';
+  if (onResultsPage) {
+    const initial = (new URLSearchParams(location.search).get('q') ?? '').trim();
+    input.value = initial;
+    if (initial.length > 0) {
+      runSearch(initial);
+    }
+  }
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const checked = validateQuery(input.value);
@@ -157,7 +226,13 @@ function init() {
       return;
     }
     render({ hint: '' });
-    runSearch(checked.query);
+    const target = `results.html?q=${encodeURIComponent(checked.query)}`;
+    if (onResultsPage) {
+      history.replaceState(null, '', target);
+      runSearch(checked.query);
+    } else {
+      location.assign(target);
+    }
   });
 }
 
