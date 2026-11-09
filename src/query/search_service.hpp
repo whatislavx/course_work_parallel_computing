@@ -16,12 +16,15 @@ namespace search::query {
 struct SearchHit {
     std::string doc_id;
     double score = 0.0;
+    std::string
+        title; // «Документ N» з імені файлу doc<N>.txt; інакше перший рядок тексту; інакше doc_id
     std::string snippet;
 };
 
 struct SearchOptions {
     std::size_t top_k = 10;              // SEARCH_TOP_K (OQ-06, тимчасове)
     std::size_t snippet_max_chars = 200; // SNIPPET_MAX_CHARS (OQ-05, тимчасове)
+    std::size_t title_max_chars = 120; // TITLE_MAX_CHARS (пропозиція, не конфігурується)
 };
 
 // Немає активного індексу (409 index_not_ready, EP-03).

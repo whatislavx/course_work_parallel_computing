@@ -1,0 +1,24 @@
+Архітектура:                           x86_64
+Режими ЦП:                             32-bit, 64-bit
+Розміри адрес:                         39 bits physical, 48 bits virtual
+Порядок байтів:                        Little Endian
+Процесори:                             8
+Список робочих ЦП:                     0-7
+Ідентифікатор виробника:               GenuineIntel
+Назва моделі:                          Intel(R) Core(TM) i5-10300H CPU @ 2.50GHz
+Сімейство процесорів:                  6
+Модель:                                165
+Потоків на ядро:                       2
+Ядер на сокет:                         4
+Сокети:                                1
+Модифікація:                           2
+Масштабування процесорів, МГц:         93%
+Макс. частота процесора у МГц:         4500,0000
+Мін. частота процесора у МГц:          800,0000
+BogoMIPS:                              4999,90
+Прапорці:                              fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid mpx rdseed adx smap clflushopt intel_pt xsaveopt xsavec xgetbv1 xsaves dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp vnmi pku ospke md_clear flush_l1d arch_capabilities
+Віртуалізація:                         VT-x
+               загалом      використ.   вільна    спільна буфери/кеш   дост.
+Пам.:           15Gi       7,0Gi       2,9Gi       844Mi       6,7Gi       8,5Gi
+Своп.:         4,2Gi       169Mi       4,1Gi
+Docker version 29.9.2, build a82e528

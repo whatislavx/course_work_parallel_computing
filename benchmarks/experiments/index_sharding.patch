@@ -1,0 +1,275 @@
+diff -ruN src-base/src/index/shared_inverted_index.cpp src-shard/src/index/shared_inverted_index.cpp
+--- src-base/src/index/shared_inverted_index.cpp	2026-11-08 12:30:10.157716621 +0200
++++ src-shard/src/index/shared_inverted_index.cpp	2026-11-09 16:44:20.835551459 +0200
+@@ -4,40 +4,127 @@
+ #include <mutex>
+ 
+ namespace search::index {
++namespace {
++
++// Частоти термів одного документа: власна TermTable, без std::unordered_map (CON-015).
++struct LocalCounts {
++    std::vector<std::string> terms;
++    std::vector<std::size_t> frequencies;
++};
++
++LocalCounts count_terms(const std::vector<std::string> &tokens) {
++    TermTable seen;
++    LocalCounts counts;
++    for (const std::string &token : tokens) {
++        const std::size_t candidate = counts.terms.size();
++        const std::size_t slot = seen.find_or_insert(token, candidate);
++        if (slot == candidate) {
++            counts.terms.push_back(token);
++            counts.frequencies.push_back(1);
++        } else {
++            ++counts.frequencies[slot];
++        }
++    }
++    return counts;
++}
++
++} // namespace
++
++std::size_t SharedInvertedIndex::shard_of(std::string_view term) {
++    return (TermTable::hash(term) >> 32) % kShardCount;
++}
+ 
+ void SharedInvertedIndex::add_document(std::string doc_id, const std::vector<std::string> &tokens) {
+-    std::unique_lock lock(mutex_);
+-    index_.add_document(std::move(doc_id), tokens);
++    const LocalCounts counts = count_terms(tokens);
++
++    std::size_t doc = 0;
++    {
++        std::unique_lock lock(docs_mutex_);
++        doc = doc_ids_.size();
++        doc_ids_.push_back(std::move(doc_id));
++    }
++
++    // Групування термів за шардами (лічильне сортування), щоб кожен шард блокувався один раз.
++    std::array<std::size_t, kShardCount + 1> offsets{};
++    std::vector<std::size_t> shard_ids(counts.terms.size());
++    for (std::size_t i = 0; i < counts.terms.size(); ++i) {
++        shard_ids[i] = shard_of(counts.terms[i]);
++        ++offsets[shard_ids[i] + 1];
++    }
++    for (std::size_t s = 0; s < kShardCount; ++s) {
++        offsets[s + 1] += offsets[s];
++    }
++    std::vector<std::size_t> order(counts.terms.size());
++    std::array<std::size_t, kShardCount> cursor{};
++    for (std::size_t i = 0; i < counts.terms.size(); ++i) {
++        order[offsets[shard_ids[i]] + cursor[shard_ids[i]]++] = i;
++    }
++
++    for (std::size_t s = 0; s < kShardCount; ++s) {
++        if (offsets[s] == offsets[s + 1]) {
++            continue;
++        }
++        Shard &shard = shards_[s];
++        std::unique_lock lock(shard.mutex);
++        for (std::size_t k = offsets[s]; k < offsets[s + 1]; ++k) {
++            const std::size_t i = order[k];
++            const std::size_t candidate = shard.lists.size();
++            const std::size_t slot = shard.table.find_or_insert(counts.terms[i], candidate);
++            if (slot == candidate) {
++                shard.lists.emplace_back();
++            }
++            shard.lists[slot].push_back(Posting{doc, counts.frequencies[i]});
++        }
++    }
+ }
+ 
+ std::size_t SharedInvertedIndex::document_count() const {
+-    std::shared_lock lock(mutex_);
+-    return index_.document_count();
++    std::shared_lock lock(docs_mutex_);
++    return doc_ids_.size();
+ }
+ 
+ std::size_t SharedInvertedIndex::term_count() const {
+-    std::shared_lock lock(mutex_);
+-    return index_.term_count();
++    std::size_t total = 0;
++    for (const Shard &shard : shards_) {
++        std::shared_lock lock(shard.mutex);
++        total += shard.table.size();
++    }
++    return total;
+ }
+ 
+ std::size_t SharedInvertedIndex::term_frequency(std::string_view term,
+                                                 std::string_view doc_id) const {
+-    std::shared_lock lock(mutex_);
+-    return index_.term_frequency(term, doc_id);
++    const Shard &shard = shards_[shard_of(term)];
++    std::shared_lock lock(shard.mutex);
++    const std::size_t slot = shard.table.find(term);
++    if (slot == TermTable::kNotFound) {
++        return 0;
++    }
++    std::shared_lock docs_lock(docs_mutex_);
++    for (const Posting &posting : shard.lists[slot]) {
++        if (doc_ids_[posting.doc_index] == doc_id) {
++            return posting.term_frequency;
++        }
++    }
++    return 0;
+ }
+ 
+ RankingStatistics
+ SharedInvertedIndex::ranking_statistics(const std::vector<std::string> &terms) const {
+-    std::shared_lock lock(mutex_);
+     RankingStatistics stats;
+-    stats.document_count = index_.document_count();
++    stats.document_count = document_count();
+     stats.terms.reserve(terms.size());
+     for (const std::string &term : terms) {
+         TermPostings entry{term, {}};
+-        if (const std::vector<Posting> *list = index_.postings(term)) {
+-            entry.docs.reserve(list->size());
+-            for (const Posting &posting : *list) {
+-                entry.docs.emplace_back(index_.doc_id(posting.doc_index), posting.term_frequency);
++        const Shard &shard = shards_[shard_of(term)];
++        std::shared_lock lock(shard.mutex);
++        const std::size_t slot = shard.table.find(term);
++        if (slot != TermTable::kNotFound) {
++            std::shared_lock docs_lock(docs_mutex_);
++            const std::vector<Posting> &list = shard.lists[slot];
++            entry.docs.reserve(list.size());
++            for (const Posting &posting : list) {
++                entry.docs.emplace_back(doc_ids_[posting.doc_index], posting.term_frequency);
+             }
+         }
+         stats.terms.push_back(std::move(entry));
+@@ -46,15 +133,18 @@
+ }
+ 
+ std::vector<std::string> SharedInvertedIndex::documents_containing(std::string_view term) const {
+-    std::shared_lock lock(mutex_);
+     std::vector<std::string> result;
+-    const std::vector<Posting> *list = index_.postings(term);
+-    if (list == nullptr) {
++    const Shard &shard = shards_[shard_of(term)];
++    std::shared_lock lock(shard.mutex);
++    const std::size_t slot = shard.table.find(term);
++    if (slot == TermTable::kNotFound) {
+         return result;
+     }
+-    result.reserve(list->size());
+-    for (const Posting &posting : *list) {
+-        result.push_back(index_.doc_id(posting.doc_index));
++    std::shared_lock docs_lock(docs_mutex_);
++    const std::vector<Posting> &list = shard.lists[slot];
++    result.reserve(list.size());
++    for (const Posting &posting : list) {
++        result.push_back(doc_ids_[posting.doc_index]);
+     }
+     std::sort(result.begin(), result.end());
+     return result;
+diff -ruN src-base/src/index/shared_inverted_index.hpp src-shard/src/index/shared_inverted_index.hpp
+--- src-base/src/index/shared_inverted_index.hpp	2026-11-08 12:30:10.157855705 +0200
++++ src-shard/src/index/shared_inverted_index.hpp	2026-11-09 16:44:20.835495938 +0200
+@@ -2,6 +2,7 @@
+ 
+ #include "index/inverted_index.hpp"
+ 
++#include <array>
+ #include <cstddef>
+ #include <shared_mutex>
+ #include <string>
+@@ -11,15 +12,8 @@
+ 
+ namespace search::index {
+ 
+-// Потокобезпечна обгортка над InvertedIndex (NFR-004, NFR-005, CON-004).
+-//
+-// Стратегія синхронізації: один std::shared_mutex на весь індекс (див. ADR-003). Читання
+-// (пошук, статистика) — паралельні, запис (додавання документа) — ексклюзивний. Документ
+-// додається цілком під одним замком, тож постинги одного документа завжди неперервні.
+-//
+-// Guarded by mutex_: усі дані індексу. Методи повертають копії, а не вказівники на внутрішні
+-// списки: вказівник міг би стати недійсним після запису, що розширює таблицю термів.
+-// Статистика для ранжування, знята під одним замком (узгоджений знімок N і df).
++// Статистика для ранжування (N і df). Після завершення побудови індекс не змінюється,
++// тож знімок узгоджений; під час побудови шарди читаються незалежно.
+ struct TermPostings {
+     std::string term;
+     // Пари (doc_id, term_frequency) за постингами терма; порядок не гарантовано.
+@@ -31,8 +25,23 @@
+     std::vector<TermPostings> terms; // у порядку вхідних термів
+ };
+ 
++#ifndef SEARCH_INDEX_SHARDS
++#define SEARCH_INDEX_SHARDS 64
++#endif
++
++// Потокобезпечний інвертований індекс із шардуванням за термом (NFR-004, NFR-005, CON-004).
++//
++// Стратегія синхронізації: простір термів ділиться на kShardCount шардів за хешем терма. Кожен
++// шард має власний std::shared_mutex, власну TermTable і власні списки постингів. Документ
++// спершу локально підраховує частоти термів, потім блокує кожен задіяний шард один раз і дописує
++// свої постинги. Єдиний спільний замок docs_mutex_ захищає лише список doc_id (коротка вставка).
++//
++// Порядок захоплення замків: писач ніколи не тримає два замки одночасно; читач бере замок шарда,
++// а потім docs_mutex_ (shared). Взаємного блокування немає.
+ class SharedInvertedIndex {
+   public:
++    static constexpr std::size_t kShardCount = SEARCH_INDEX_SHARDS;
++
+     // Thread-safe.
+     void add_document(std::string doc_id, const std::vector<std::string> &tokens);
+ 
+@@ -41,16 +50,26 @@
+     std::size_t term_count() const;
+     std::size_t term_frequency(std::string_view term, std::string_view doc_id) const;
+ 
+-    // Thread-safe: N і постинги всіх термів читаються під одним shared-замком за O(Σ df).
+-    // Терми без входжень дають порожній список постингів.
++    // Thread-safe. Терми без входжень дають порожній список постингів.
+     RankingStatistics ranking_statistics(const std::vector<std::string> &terms) const;
+ 
+     // doc_id документів, що містять терм, відсортовані лексично.
+     std::vector<std::string> documents_containing(std::string_view term) const;
+ 
+   private:
+-    mutable std::shared_mutex mutex_;
+-    InvertedIndex index_;
++    // Guarded by mutex: table і lists.
++    struct Shard {
++        mutable std::shared_mutex mutex;
++        TermTable table;
++        std::vector<std::vector<Posting>> lists;
++    };
++
++    static std::size_t shard_of(std::string_view term);
++
++    std::array<Shard, kShardCount> shards_;
++    // Guarded by docs_mutex_: doc_ids_.
++    mutable std::shared_mutex docs_mutex_;
++    std::vector<std::string> doc_ids_;
+ };
+ 
+ } // namespace search::index
+diff -ruN src-base/src/index/term_table.hpp src-shard/src/index/term_table.hpp
+--- src-base/src/index/term_table.hpp	2026-11-08 12:30:10.158107517 +0200
++++ src-shard/src/index/term_table.hpp	2026-11-09 16:44:20.835407023 +0200
+@@ -14,6 +14,9 @@
+   public:
+     static constexpr std::size_t kNotFound = static_cast<std::size_t>(-1);
+ 
++    // FNV-1a, 64 біти. Публічна, щоб шардований індекс обирав шард за тим самим хешем.
++    static std::size_t hash(std::string_view term);
++
+     TermTable();
+ 
+     // Повертає значення для терма або kNotFound.
+@@ -32,7 +35,6 @@
+         std::size_t value = kNotFound; // kNotFound означає порожній слот
+     };
+ 
+-    static std::size_t hash(std::string_view term);
+     std::size_t probe(std::string_view term) const;
+     void grow();
+ 

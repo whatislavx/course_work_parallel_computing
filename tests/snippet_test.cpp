@@ -11,12 +11,24 @@ using search::snippet::make_snippet;
 
 } // namespace
 
-TEST(Snippet, StartsAtFirstWordContainingAQueryTerm) {
-    EXPECT_EQ(make_snippet("the quick brown fox jumps", {"brown"}, 100), "brown fox jumps");
+TEST(Snippet, IncludesNearbyWordsBeforeTheFirstMatch) {
+    EXPECT_EQ(make_snippet("the quick brown fox jumps", {"brown"}, 100),
+              "the quick brown fox jumps");
+}
+
+TEST(Snippet, ContextIsAtMostAQuarterOfTheLimitAndWholeWords) {
+    const std::string text = "one two three four five six seven eight nine ten alpha omega";
+    EXPECT_EQ(make_snippet(text, {"alpha"}, 40), "\xE2\x80\xA6nine ten alpha omega");
+}
+
+TEST(Snippet, ContextIsDroppedWhenItWouldPushMatchOutOfLimit) {
+    const std::string snippet = make_snippet("ab cd efghijklmnopqrstu", {"efghijklmnopqrstu"}, 17);
+    EXPECT_EQ(snippet, "efghijklmnopqrstu");
+    EXPECT_LE(snippet.size(), 17u);
 }
 
 TEST(Snippet, MatchingIsCaseInsensitiveAndIgnoresPunctuation) {
-    EXPECT_EQ(make_snippet("Hello, World! again", {"world"}, 100), "World! again");
+    EXPECT_EQ(make_snippet("Hello, World! again", {"world"}, 100), "Hello, World! again");
 }
 
 TEST(Snippet, NoMatchReturnsEmptyString) {
@@ -42,6 +54,7 @@ TEST(Snippet, MatchedWordLongerThanLimitGivesEmptyString) {
 
 TEST(Snippet, OversizedFirstMatchDoesNotStopSearchForLaterMatches) {
     EXPECT_EQ(make_snippet("supercalifragilistic alpha", {"supercalifragilistic", "alpha"}, 10),
+              "\xE2\x80\xA6"
               "alpha");
 }
 

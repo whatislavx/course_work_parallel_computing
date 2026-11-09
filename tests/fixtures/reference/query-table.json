@@ -6,7 +6,10 @@
   ],
   "thread pool": [
     "d01.txt",
-    "d06.txt"
+    "d03.txt",
+    "d06.txt",
+    "d07.txt",
+    "d12.txt"
   ],
   "mutex": [
     "d02.txt",

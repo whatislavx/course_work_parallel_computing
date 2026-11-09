@@ -3,6 +3,7 @@
 #include "index/tokenizer.hpp"
 #include "search/ranking.hpp"
 #include "search/snippet.hpp"
+#include "search/title.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -79,7 +80,14 @@ std::vector<SearchHit> SearchService::search(std::string_view query,
     hits.reserve(ranked.size());
     for (ranking::ScoredDocument &item : ranked) {
         const std::string text = read_document(dataset_dir_, item.doc_id);
-        hits.push_back({std::move(item.doc_id), item.score,
+        std::string doc_title = title::make_title_from_doc_id(item.doc_id);
+        if (doc_title.empty()) {
+            doc_title = title::make_title(text, options_.title_max_chars);
+        }
+        if (doc_title.empty()) {
+            doc_title = item.doc_id;
+        }
+        hits.push_back({std::move(item.doc_id), item.score, std::move(doc_title),
                         snippet::make_snippet(text, terms, options_.snippet_max_chars)});
     }
     return hits;
