@@ -66,3 +66,9 @@ Thumbs.db
 # Згенерований повільний корпус (FIX-06) і результати прогонів не зберігаються в Git.
 build/
 tests/fixtures/slow-corpus/
+
+# Локальні каталоги збирання, дані й чернетки вимірювань.
+build-*/
+bench_out/
+en_50k.txt
+london.json
