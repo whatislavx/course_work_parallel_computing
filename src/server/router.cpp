@@ -117,8 +117,10 @@ std::variant<SearchRequest, Response> parse_search_body(std::string_view body,
 Response search_response(const std::vector<query::SearchHit> &hits, std::uint64_t time_ms) {
     boost::json::array results;
     for (const query::SearchHit &hit : hits) {
-        results.push_back(boost::json::object{
-            {"doc_id", hit.doc_id}, {"score", hit.score}, {"snippet", hit.snippet}});
+        results.push_back(boost::json::object{{"doc_id", hit.doc_id},
+                                              {"score", hit.score},
+                                              {"title", hit.title},
+                                              {"snippet", hit.snippet}});
     }
     boost::json::object body{{"results", std::move(results)}, {"time_ms", time_ms}};
     return json_response(bh::status::ok, boost::json::serialize(body));

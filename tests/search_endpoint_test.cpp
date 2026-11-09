@@ -135,6 +135,20 @@ TEST(SearchService, ResultsAreRankedWithSnippetsAndTopKLimit) {
     EXPECT_EQ(hits[0].doc_id, "b.txt");
     EXPECT_GT(hits[0].score, 0.0);
     EXPECT_EQ(hits[0].snippet, "alpha alpha beta");
+    EXPECT_EQ(hits[0].title, "alpha alpha beta");
+    std::filesystem::remove_all(dataset);
+}
+
+TEST(SearchService, TitleIsDocumentNumberFromFileName) {
+    const auto dataset = make_dataset("numbered");
+    { std::ofstream(dataset / "doc001175.txt") << "alpha beta\n"; }
+    auto index = std::make_shared<search::index::SharedInvertedIndex>();
+    index->add_document("doc001175.txt", {"alpha", "beta"});
+    SearchService service([index] { return index; }, dataset, SearchOptions{10, 200});
+    const auto hits = service.search("alpha");
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0].title, "Документ 1175");
+    EXPECT_EQ(hits[0].snippet, "alpha beta");
     std::filesystem::remove_all(dataset);
 }
 
@@ -148,6 +162,7 @@ TEST(SearchService, MissingFileYieldsEmptySnippetWithoutFailing) {
     ASSERT_EQ(hits.size(), 1u);
     EXPECT_EQ(hits[0].doc_id, "gone.txt");
     EXPECT_EQ(hits[0].snippet, "");
+    EXPECT_EQ(hits[0].title, "gone.txt");
 }
 
 TEST(SearchService, DocIdEscapingDatasetDirIsNotRead) {
@@ -158,6 +173,7 @@ TEST(SearchService, DocIdEscapingDatasetDirIsNotRead) {
     const auto hits = service.search("alpha");
     ASSERT_EQ(hits.size(), 1u);
     EXPECT_EQ(hits[0].snippet, "");
+    EXPECT_EQ(hits[0].title, "../search_endpoint_traversal/a.txt");
     std::filesystem::remove_all(dataset);
 }
 
@@ -269,6 +285,7 @@ TEST_F(SearchEndpointTest, SearchAfterBuildReturnsResultsWithContractFields) {
     ASSERT_EQ(results.size(), 2u);
     EXPECT_EQ(results[0].as_object().at("doc_id").as_string(), "b.txt");
     EXPECT_TRUE(results[0].as_object().at("score").is_double());
+    EXPECT_TRUE(results[0].as_object().at("title").is_string());
     EXPECT_TRUE(results[0].as_object().at("snippet").is_string());
     EXPECT_GE(body.at("time_ms").as_int64(), 0);
     EXPECT_EQ(body.size(), 2u);
