@@ -139,7 +139,7 @@ export function highlightParts(text, query) {
 }
 
 // Тривалість анімації кроку смуги етапів: результати показуються після неї, а не раніше.
-export const STAGE_PAUSE_MS = 600;
+export const STAGE_PAUSE_MS = 400;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
