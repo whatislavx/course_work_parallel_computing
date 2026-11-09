@@ -104,3 +104,31 @@ TEST(Config, DefaultIndexThreadsAboveMaximumIsRejected) {
         parse_config(env_from({{"MAX_INDEX_THREADS", "4"}, {"DEFAULT_INDEX_THREADS", "8"}})),
         ConfigError);
 }
+
+TEST(Config, IndexOnStartDefaultsToFalse) {
+    EXPECT_FALSE(parse_config(env_from({})).index_on_start);
+}
+
+TEST(Config, IndexOnStartAcceptsBooleanSpellings) {
+    for (const char *value : {"true", "TRUE", "1"}) {
+        EXPECT_TRUE(parse_config(env_from({{"INDEX_ON_START", value}, {"DATASET_DIR", "/data"}}))
+                        .index_on_start)
+            << value;
+    }
+    for (const char *value : {"false", "False", "0"}) {
+        EXPECT_FALSE(parse_config(env_from({{"INDEX_ON_START", value}})).index_on_start) << value;
+    }
+}
+
+TEST(Config, IndexOnStartInvalidValueIsRejectedWithVariableName) {
+    try {
+        parse_config(env_from({{"INDEX_ON_START", "yes"}, {"DATASET_DIR", "/data"}}));
+        FAIL() << "очікувався ConfigError";
+    } catch (const ConfigError &e) {
+        EXPECT_NE(std::string(e.what()).find("INDEX_ON_START"), std::string::npos);
+    }
+}
+
+TEST(Config, IndexOnStartRequiresDatasetDir) {
+    EXPECT_THROW(parse_config(env_from({{"INDEX_ON_START", "true"}})), ConfigError);
+}
