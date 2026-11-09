@@ -170,13 +170,16 @@ components:
     SearchResult:
       type: object
       additionalProperties: false
-      required: [doc_id, score, snippet]
+      required: [doc_id, score, title, snippet]
       properties:
         doc_id:
           type: string
         score:
           type: number
           minimum: 0
+        title:
+          type: string
+          description: "If the file name is doc<digits>.txt: 'Документ <N>' (N without leading zeros); otherwise the first non-blank line, whitespace collapsed, length <= TITLE_MAX_CHARS (120 bytes); falls back to doc_id. Deterministic, no LLM."
         snippet:
           type: string
           description: "Length <= SNIPPET_MAX_CHARS (OQ-05); contains a term of the search term set (query terms; for WebSocket also expanded_terms)."

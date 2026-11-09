@@ -172,7 +172,7 @@
 - **200:**
 
 ```json
-{ "results": [ { "doc_id": "...", "score": 0.95, "snippet": "..." } ], "time_ms": 56 }
+{ "results": [ { "doc_id": "...", "score": 0.95, "title": "...", "snippet": "..." } ], "time_ms": 56 }
 ```
 
 | Поле | Тип | Правило |
@@ -180,6 +180,7 @@
 | `results` | array | ≤ `SEARCH_TOP_K` елементів, впорядковано за `score` за спаданням (FR-014) |
 | `results[].doc_id` | string | OQ-18 |
 | `results[].score` | number ≥ 0 | OQ-04 |
+| `results[].title` | string | якщо ім'я файлу має вигляд `doc<цифри>.txt` — `Документ <N>` (N — число з імені без провідних нулів); інакше перший непорожній рядок тексту з нормалізованими пробілами, ≤ `TITLE_MAX_CHARS` = 120 байтів; якщо й його немає — `doc_id`. Детермінована, без LLM |
 | `results[].snippet` | string | ≤ `SNIPPET_MAX_CHARS`, містить терм пошукової множини (FR-015) |
 | `time_ms` | integer ≥ 0 | час пошуку |
 
@@ -273,7 +274,7 @@ stateDiagram-v2
 **WS-E-02 `keyword_search`**
 
 ```json
-{ "stage": "keyword_search", "data": { "results": [ { "doc_id": "...", "score": 0.95, "snippet": "..." } ], "time_ms": 12 } }
+{ "stage": "keyword_search", "data": { "results": [ { "doc_id": "...", "score": 0.95, "title": "...", "snippet": "..." } ], "time_ms": 12 } }
 ```
 
 | Поле | Тип | Правило |
