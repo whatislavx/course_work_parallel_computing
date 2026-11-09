@@ -419,7 +419,7 @@ function init() {
       return;
     }
     render({ hint: '' });
-    const target = `results.html?q=${encodeURIComponent(checked.query)}`;
+    const target = `/results?q=${encodeURIComponent(checked.query)}`;
     if (onResultsPage) {
       history.replaceState(null, '', target);
       runSearch(checked.query);
