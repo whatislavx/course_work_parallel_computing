@@ -20,6 +20,16 @@ docker compose up --build
 
 Ollama запускається окремим сервісом (`ollama`). Сервіс `ollama-model` один раз завантажує модель з `OLLAMA_MODEL` (за замовчуванням `qwen2.5:0.5b`, див. ADR-005). Сервер стартує після готовності Ollama.
 
+### Готовий образ сервера (GitHub Packages)
+
+Образ сервера публікується в GitHub Packages (`ghcr.io`) при створенні тега `v*` (workflow `.github/workflows/publish-image.yml`). Перед публікацією workflow запускає контейнер і перевіряє `GET /api/health`.
+
+```bash
+docker pull ghcr.io/whatislavx/course_work_parallel_computing/server:1.0.0   # або :latest
+```
+
+Для запуску пакет не потрібен: `docker compose up --build` збирає образ локально. Опублікований образ зручний, щоб не компілювати C++ при розгортанні.
+
 > Стан перевірки: конфігурацію compose перевірено командою `docker compose config`. Повний запуск з чистого клону ще не верифіковано в середовищі розробки (потрібен запущений Docker-демон). Результат оновлюватиметься у записці.
 
 ## Порти і сервіси
