@@ -22,7 +22,32 @@
 #include <string_view>
 #include <thread>
 
-namespace {} // namespace
+namespace {
+
+// Автоматична побудова індексу при старті (INDEX_ON_START). Сервер уже приймає запити, тож
+// /api/health відповідає під час побудови, а пошук до її завершення дає 409 index_not_ready.
+// Збій побудови логується і не зупиняє сервер: індекс можна побудувати через POST /api/index.
+void start_initial_build(search::index::IndexManager &manager, const std::string &dataset_dir,
+                         std::size_t threads) {
+    std::cout << "initial index build started: threads=" << threads << '\n';
+    const bool started =
+        manager.start_build(dataset_dir, threads, [](const search::index::BuildResult &result) {
+            if (result.ok) {
+                std::cout << "initial index build finished: documents=" << result.stats.documents
+                          << " time_ms=" << result.stats.index_build_time_ms << '\n';
+            } else if (result.error_code == "build_cancelled") {
+                std::cout << "initial index build cancelled\n";
+            } else {
+                std::cerr << "initial index build failed: " << result.error_code << ": "
+                          << result.error_message << '\n';
+            }
+        });
+    if (!started) {
+        std::cerr << "initial index build skipped: another build is in progress\n";
+    }
+}
+
+} // namespace
 
 int main() {
     try {
@@ -118,6 +143,9 @@ int main() {
         });
 
         std::cout << "search_server listening on port " << server.port() << '\n';
+        if (cfg.index_on_start) {
+            start_initial_build(index_manager, cfg.dataset_dir, options.default_index_threads);
+        }
         ioc.run();
         return 0;
     } catch (const search::config::ConfigError &e) {
