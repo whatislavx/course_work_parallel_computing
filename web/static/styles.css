@@ -295,9 +295,9 @@ kbd { font: inherit; font-weight: 700; font-size: 13px; padding: 1px 8px; border
 .stepper[hidden] { display: none; }
 .stepper li { flex: 1 1 0; min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
 .stepper li:not(:last-child)::before { content: ""; position: absolute; top: 15px; left: calc(50% + 18px); right: calc(-50% + 18px); height: 2px; background: var(--line); border-radius: 2px; }
-.stepper li:not(:last-child)::before { background: linear-gradient(var(--ink), var(--ink)) left / 0 100% no-repeat, var(--line); transition: background-size .6s ease; }
+.stepper li:not(:last-child)::before { background: linear-gradient(var(--ink), var(--ink)) left / 0 100% no-repeat, var(--line); transition: background-size .25s ease; }
 .stepper li[data-state="done"]:not(:last-child)::before { background-size: 100% 100%; }
-.step-node { transition: background-color .4s ease, color .4s ease, box-shadow .4s ease, transform .4s ease; flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--paper); box-shadow: inset 0 0 0 2px var(--line); }
+.step-node { transition: background-color .25s ease, color .25s ease, box-shadow .25s ease, transform .25s ease; flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--paper); box-shadow: inset 0 0 0 2px var(--line); }
 .stepper li[data-state="done"] .step-node { background: var(--ink); color: var(--paper); box-shadow: none; }
 .stepper li[data-state="active"] .step-node { transform: scale(1.12); color: var(--hot); box-shadow: inset 0 0 0 2px var(--hot), 0 0 0 5px rgba(255, 94, 77, .16); }
 .step-text { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 8px; min-width: 0; }
