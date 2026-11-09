@@ -23,11 +23,11 @@ test('empty or blank query is not sent and gets a hint (BDD-WEB-05)', () => {
 });
 
 test('score label names the value as relevance', () => {
-  assert.equal(scoreLabel('2.7716'), 'релевантність 2.7716');
+  assert.equal(scoreLabel('2.7716'), 'Релевантність 2.7716');
 });
 
-test('score is shown with four decimals', () => {
-  assert.equal(formatScore(0.5), '0.5000');
+test('score is shown with two decimals', () => {
+  assert.equal(formatScore(0.5), '0.50');
 });
 
 test('keyword_search results keep the server order and carry doc_id, title, score, snippet (BDD-WEB-02)', () => {
@@ -43,7 +43,7 @@ test('keyword_search results keep the server order and carry doc_id, title, scor
   });
   assert.deepEqual(model.items.map((i) => i.docId), ['b.txt', 'a.txt']);
   assert.deepEqual(model.items.map((i) => i.title), ['Beta notes', 'Alpha']);
-  assert.equal(model.items[0].score, '2.0000');
+  assert.equal(model.items[0].score, '2.00');
   assert.equal(model.empty, false);
 });
 
@@ -128,7 +128,7 @@ test('expansion detail says so when no extra terms were added (fallback)', () =>
 });
 
 test('keyword detail shows server time and document count', () => {
-  assert.equal(stageDetail('keyword_search', { time_ms: 12, count: 3 }), 'за 12 мс на сервері · документів: 3');
+  assert.equal(stageDetail('keyword_search', { time_ms: 12, count: 3 }), 'за 12 мс · документів: 3');
 });
 
 test('done detail shows total measured time', () => {
