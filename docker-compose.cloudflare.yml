@@ -1,0 +1,14 @@
+# Публікація в інтернет через Cloudflare Tunnel. Додаткова до основного docker-compose.yml:
+# основне розгортання працює без неї. Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d
+# Токен тунелю береться з .env (CLOUDFLARE_TUNNEL_TOKEN) і не потрапляє в репозиторій.
+# Маршрут hostname → http://traefik:80 задається в панелі Cloudflare Zero Trust (remote config).
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN не задано в .env}
+    depends_on:
+      - traefik
+    restart: unless-stopped

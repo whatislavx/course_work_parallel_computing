@@ -1,0 +1,13 @@
+# Динамічна конфігурація: весь трафік на веб-контейнер (nginx), який проксує /api і /ws/search.
+http:
+  routers:
+    web:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - web
+      service: web
+  services:
+    web:
+      loadBalancer:
+        servers:
+          - url: "http://web:80"
