@@ -1,0 +1,81 @@
+# Публікація образу сервера в GitHub Packages (ghcr.io).
+# Запускається при створенні тега v* або вручну для наявного тега. Спершу проходить CI
+# (ci.yml); образ публікується лише за успішних перевірок.
+name: Publish server image
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git tag to build the image from
+        required: true
+        default: v1.0.0
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/server
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=true
+          tags: |
+            type=semver,pattern={{version}},value=${{ inputs.ref || github.ref_name }}
+
+      - name: Build image for the smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/server.Dockerfile
+          load: true
+          tags: server:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test (GET /api/health)
+        run: |
+          docker run -d --name smoke -p 8080:8080 server:smoke
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/api/health && exit 0
+            sleep 1
+          done
+          docker logs smoke
+          exit 1
+
+      - name: Push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/server.Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
