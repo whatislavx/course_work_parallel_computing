@@ -135,8 +135,10 @@ export function highlightParts(text, query) {
     .map((part) => ({ text: part, match: terms.includes(part.toLowerCase()) }));
 }
 
-// Пауза між етапами: без неї «Уточнення запиту» і «Пошук документів» з'являються одночасно.
+// Тривалість анімації кроку смуги етапів: результати показуються після неї, а не раніше.
 export const STAGE_PAUSE_MS = 800;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Останній запит: для підсвічування і повторної спроби.
 let lastQuery = '';
@@ -213,29 +215,39 @@ function renderProgress(lastStage, details = {}, visible = true) {
   }
   // Крок «done» не показується окремо: завершення видно за станом кроків, а час — у заголовку.
   const steps = progressStates(lastStage).filter((item) => item.stage !== 'done');
-  list.replaceChildren(
-    ...steps.map((item, position) => {
-      const li = document.createElement('li');
-      li.dataset.state = item.state;
-      if (item.state === 'active') {
-        li.setAttribute('aria-current', 'step');
-      }
-      const node = document.createElement('span');
-      node.className = 'step-node';
-      node.textContent = item.state === 'done' ? '✓' : String(position + 1);
-      const text = document.createElement('span');
-      text.className = 'step-text';
-      const label = document.createElement('span');
-      label.className = 'stage-label';
-      label.textContent = item.label;
-      const detail = document.createElement('span');
-      detail.className = 'stage-detail';
-      detail.textContent = item.state === 'active' ? 'триває…' : (details[item.stage] ?? '');
-      text.append(label, detail);
-      li.append(node, text);
-      return li;
-    }),
-  );
+  // Елементи кроків переживають оновлення, щоб CSS-переходи між станами були плавними.
+  if (list.children.length !== steps.length) {
+    list.replaceChildren(...steps.map(createStep));
+  }
+  steps.forEach((item, position) => updateStep(list.children[position], item, position, details));
+}
+
+function createStep() {
+  const li = document.createElement('li');
+  const node = document.createElement('span');
+  node.className = 'step-node';
+  const text = document.createElement('span');
+  text.className = 'step-text';
+  const label = document.createElement('span');
+  label.className = 'stage-label';
+  const detail = document.createElement('span');
+  detail.className = 'stage-detail';
+  text.append(label, detail);
+  li.append(node, text);
+  return li;
+}
+
+function updateStep(li, item, position, details) {
+  li.dataset.state = item.state;
+  if (item.state === 'active') {
+    li.setAttribute('aria-current', 'step');
+  } else {
+    li.removeAttribute('aria-current');
+  }
+  li.querySelector('.step-node').textContent = item.state === 'done' ? '✓' : String(position + 1);
+  li.querySelector('.stage-label').textContent = item.label;
+  li.querySelector('.stage-detail').textContent =
+    item.state === 'active' ? 'триває…' : (details[item.stage] ?? '');
 }
 
 // Заглушки-скелети під час очікування відповіді.
@@ -313,27 +325,27 @@ function runSearch(query) {
         expanded_terms: model.terms,
         elapsed_ms: elapsed(),
       });
-      renderProgress('query_expansion', details);
+      // Анімація: уточнення завершується, лінія доходить до «Пошуку документів», він стає активним.
+      await sleep(Math.max(0, STAGE_PAUSE_MS - elapsed()));
+      for (const stage of ['handoff', 'keyword_search']) {
+        if (finished || !isCurrent()) {
+          return;
+        }
+        renderProgress(stage, details);
+        await sleep(STAGE_PAUSE_MS);
+      }
     } else if (model.type === 'results') {
-      renderProgress('handoff', details);
       details.keyword_search = stageDetail('keyword_search', {
         time_ms: event.data?.time_ms ?? 0,
         count: model.items.length,
       });
       received = true;
-      const count = model.items.length;
-      statusText = model.empty ? '' : foundMessage(count);
+      statusText = model.empty ? '' : foundMessage(model.items.length);
       render({
         status: statusText,
         items: model.items,
         empty: model.empty,
       });
-      // Пауза лише для анімації стану етапу: результати вже показані, обробка подій не чекає.
-      setTimeout(() => {
-        if (!finished && isCurrent()) {
-          renderProgress('keyword_search', details);
-        }
-      }, STAGE_PAUSE_MS);
     } else if (model.type === 'error') {
       finish({ status: model.message, error: true, retry: true });
     } else if (model.type === 'done') {
@@ -358,11 +370,14 @@ function runSearch(query) {
       finish({ status: unavailableMessage(), error: true, retry: true });
     }
   });
+  // Закриття обробляється після всіх повідомлень у черзі, щоб не обірвати анімацію перед результатами.
   socket.addEventListener('close', () => {
-    if (!finished && isCurrent()) {
-      const message = received ? 'Відповідь неповна: з\'єднання перервано.' : unavailableMessage();
-      finish({ status: message, error: true, retry: true });
-    }
+    queue = queue.then(() => {
+      if (!finished && isCurrent()) {
+        const message = received ? 'Відповідь неповна: з\'єднання перервано.' : unavailableMessage();
+        finish({ status: message, error: true, retry: true });
+      }
+    });
   });
 }
 
