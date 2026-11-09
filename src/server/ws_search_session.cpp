@@ -83,6 +83,7 @@ std::string serialize_keyword(const std::vector<query::SearchHit> &hits, std::ui
         json::object item;
         item["doc_id"] = hit.doc_id;
         item["score"] = hit.score;
+        item["title"] = hit.title;
         item["snippet"] = hit.snippet;
         results.emplace_back(std::move(item));
     }

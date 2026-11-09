@@ -184,6 +184,7 @@ TEST_F(WsSearchTest, PipelineEmitsStagesInOrder) {
     const auto &first = data.at("results").as_array()[0].as_object();
     EXPECT_TRUE(first.at("doc_id").is_string());
     EXPECT_TRUE(first.at("score").is_double());
+    EXPECT_TRUE(first.at("title").is_string());
     EXPECT_TRUE(first.at("snippet").is_string());
 
     const auto done = read_message(*ws);

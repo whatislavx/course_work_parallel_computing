@@ -18,6 +18,7 @@ add_library(search_core STATIC
     server/ws_search_session.cpp
     search/ranking.cpp
     search/snippet.cpp
+    search/title.cpp
     query/search_service.cpp
     ollama/endpoint.cpp
     ollama/probe.cpp
