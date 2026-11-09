@@ -29,7 +29,7 @@ def main() -> None:
     (HERE / "reference" / "postings.json").write_text(
         json.dumps(postings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    # FIX-03: запит → очікувані doc_id (AND-семантика для кількох термів, без розширення).
+    # FIX-03: запит → очікувані doc_id (OR-семантика для кількох термів, OQ-03; без розширення).
     queries = {
         "parallel": ["parallel"],
         "thread pool": ["thread", "pool"],
@@ -43,7 +43,7 @@ def main() -> None:
     table = {}
     for query, terms in queries.items():
         sets = [set(postings.get(t, [])) for t in terms]
-        result = set.intersection(*sets) if sets else set()
+        result = set.union(*sets) if sets else set()
         table[query] = sorted(result)
     (HERE / "reference" / "query-table.json").write_text(
         json.dumps(table, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
