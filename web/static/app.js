@@ -137,7 +137,6 @@ export function highlightParts(text, query) {
 
 // Пауза між етапами: без неї «Уточнення запиту» і «Пошук документів» з'являються одночасно.
 export const STAGE_PAUSE_MS = 800;
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Останній запит: для підсвічування і повторної спроби.
 let lastQuery = '';
@@ -317,12 +316,10 @@ function runSearch(query) {
       renderProgress('query_expansion', details);
     } else if (model.type === 'results') {
       renderProgress('handoff', details);
-      await wait(STAGE_PAUSE_MS);
       details.keyword_search = stageDetail('keyword_search', {
         time_ms: event.data?.time_ms ?? 0,
         count: model.items.length,
       });
-      renderProgress('keyword_search', details);
       received = true;
       const count = model.items.length;
       statusText = model.empty ? '' : foundMessage(count);
@@ -331,6 +328,12 @@ function runSearch(query) {
         items: model.items,
         empty: model.empty,
       });
+      // Пауза лише для анімації стану етапу: результати вже показані, обробка подій не чекає.
+      setTimeout(() => {
+        if (!finished && isCurrent()) {
+          renderProgress('keyword_search', details);
+        }
+      }, STAGE_PAUSE_MS);
     } else if (model.type === 'error') {
       finish({ status: model.message, error: true, retry: true });
     } else if (model.type === 'done') {
