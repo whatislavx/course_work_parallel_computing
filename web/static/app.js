@@ -129,6 +129,10 @@ export function highlightParts(text, query) {
     .map((part) => ({ text: part, match: terms.includes(part.toLowerCase()) }));
 }
 
+// Пауза між етапами: без неї «Уточнення запиту» і «Пошук документів» з'являються одночасно.
+export const STAGE_PAUSE_MS = 800;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // Останній запит: для підсвічування і повторної спроби.
 let lastQuery = '';
 
@@ -287,7 +291,7 @@ function runSearch(query) {
   renderProgress(null);
   renderSkeleton();
   socket.addEventListener('open', () => socket.send(JSON.stringify({ query })));
-  socket.addEventListener('message', (message) => {
+  const handleMessage = async (message) => {
     if (!isCurrent()) {
       return;
     }
@@ -305,6 +309,7 @@ function runSearch(query) {
         elapsed_ms: elapsed(),
       });
       renderProgress('query_expansion', details);
+      await wait(STAGE_PAUSE_MS);
     } else if (model.type === 'results') {
       details.keyword_search = stageDetail('keyword_search', {
         time_ms: event.data?.time_ms ?? 0,
@@ -333,6 +338,10 @@ function runSearch(query) {
         finish({ status: 'Відповідь неповна: результатів не отримано.', error: true, retry: true });
       }
     }
+  };
+  let queue = Promise.resolve();
+  socket.addEventListener('message', (message) => {
+    queue = queue.then(() => handleMessage(message));
   });
   socket.addEventListener('error', () => {
     if (!finished && isCurrent()) {
