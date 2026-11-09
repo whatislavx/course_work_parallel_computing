@@ -34,6 +34,7 @@ services:
     environment:
       SERVER_PORT: "8080"
       DATASET_DIR: /data/docs
+      INDEX_ON_START: ${INDEX_ON_START:-true}  # індекс будується при старті контейнера
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}  # ADR-005 (OQ-13)
     volumes:
