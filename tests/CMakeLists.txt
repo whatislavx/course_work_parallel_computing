@@ -12,6 +12,7 @@ add_executable(search_tests
     index_endpoint_test.cpp
     ranking_test.cpp
     snippet_test.cpp
+    title_test.cpp
     search_endpoint_test.cpp
     generate_test.cpp
     ollama_test.cpp

@@ -1,5 +1,5 @@
 # Три сервіси (NFR-012): сервер пошуку, Ollama з автозавантаженням моделі, веб-контейнер (AD-07).
-# OLLAMA_MODEL — ПЛЕЙСХОЛДЕР до рішення OQ-13; значення за замовчуванням нижче тимчасове.
+# OLLAMA_MODEL — модель Ollama, дефолт за ADR-005 (OQ-13 закрито); можна перевизначити.
 services:
   ollama:
     image: ollama/ollama
@@ -46,13 +46,22 @@ services:
 
   web:
     image: nginx:alpine
-    ports:
-      - "8081:80"
     volumes:
       - ./web/static:/usr/share/nginx/html:ro
       - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - server
+
+  # Reverse proxy перед веб-контейнером; єдина опублікована точка входу (порт 8081 на хості).
+  traefik:
+    image: traefik:v3.6
+    command: ["--configFile=/etc/traefik/traefik.yml"]
+    ports:
+      - "8081:80"
+    volumes:
+      - ./docker/traefik:/etc/traefik:ro
+    depends_on:
+      - web
 
 volumes:
   ollama-data:

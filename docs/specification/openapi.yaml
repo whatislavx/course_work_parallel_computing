@@ -1,0 +1,316 @@
+openapi: 3.0.3
+info:
+  title: course_work_parallel_computing search API
+  version: 0.4.0
+  description: >
+    REST contract of the search server. Paths, methods and success payloads are fixed by
+    the coursework assignment (Appendix A). Error payloads and status codes other than 200
+    are proposals pending approval (see 06-api-specification.md, OQ-11).
+    WebSocket /ws/search is specified in 06-api-specification.md section 4 (OpenAPI 3.0 does
+    not describe WebSocket); its message schemas are included under components for reuse.
+servers:
+  - url: http://localhost:{port}
+    variables:
+      port:
+        default: "8080"
+        description: Proposed default; actual port is configuration (NFR-019).
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: EP-01. Server status and Ollama availability
+      description: "FR-001, FR-002"
+      responses:
+        "200":
+          description: Server is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "405":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /api/index:
+    post:
+      operationId: buildIndex
+      summary: EP-02. Build the inverted index synchronously
+      description: "FR-003..FR-009, FR-042. Empty body equals {}. Body is parsed as JSON regardless of Content-Type."
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IndexRequest"
+          "*/*":
+            schema:
+              $ref: "#/components/schemas/IndexRequest"
+      responses:
+        "200":
+          description: Index built and activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "405":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/search:
+    post:
+      operationId: search
+      summary: EP-03. Keyword search
+      description: "FR-012..FR-018, FR-035. Whether query expansion applies is open (OQ-02, blocking); current proposal: not applied. Body is parsed as JSON regardless of Content-Type."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+          "*/*":
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Search results (possibly empty)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "405":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/stats:
+    get:
+      operationId: getStats
+      summary: EP-04. Statistics of the active index
+      description: "FR-010, FR-011"
+      responses:
+        "200":
+          description: Statistics (zeros before the first build)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
+        "405":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+components:
+  responses:
+    Error:
+      description: Error (proposed format, OQ-11)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, ollama]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        ollama:
+          type: boolean
+    IndexRequest:
+      type: object
+      description: Unknown fields are ignored (OQ-27).
+      properties:
+        threads:
+          type: integer
+          minimum: 1
+          description: "Upper bound MAX_INDEX_THREADS (configuration, OQ-07). Default DEFAULT_INDEX_THREADS. A JSON number with a decimal point or exponent (e.g. 4.0) is rejected (OQ-07)."
+    IndexResponse:
+      type: object
+      additionalProperties: false
+      required: [status, documents_indexed, time_ms]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        documents_indexed:
+          type: integer
+          minimum: 0
+        time_ms:
+          type: integer
+          minimum: 0
+    SearchRequest:
+      type: object
+      required: [query, mode]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: "Must contain a non-whitespace character; maxLength MAX_QUERY_LENGTH (OQ-06)."
+        mode:
+          type: string
+          enum: [keyword, expanded]
+    SearchResult:
+      type: object
+      additionalProperties: false
+      required: [doc_id, score, title, snippet]
+      properties:
+        doc_id:
+          type: string
+        score:
+          type: number
+          minimum: 0
+        title:
+          type: string
+          description: "If the file name is doc<digits>.txt: 'Документ <N>' (N without leading zeros); otherwise the first non-blank line, whitespace collapsed, length <= TITLE_MAX_CHARS (120 bytes); falls back to doc_id. Deterministic, no LLM."
+        snippet:
+          type: string
+          description: "Length <= SNIPPET_MAX_CHARS (OQ-05); contains a term of the search term set (query terms; for WebSocket also expanded_terms)."
+    SearchResponse:
+      type: object
+      additionalProperties: false
+      required: [results, time_ms]
+      properties:
+        results:
+          type: array
+          description: "Sorted by score descending; at most SEARCH_TOP_K items (OQ-06)."
+          items:
+            $ref: "#/components/schemas/SearchResult"
+        time_ms:
+          type: integer
+          minimum: 0
+    StatsResponse:
+      type: object
+      additionalProperties: false
+      required: [documents, index_build_time_ms, threads_used]
+      properties:
+        documents:
+          type: integer
+          minimum: 0
+        index_build_time_ms:
+          type: integer
+          minimum: 0
+        threads_used:
+          type: integer
+          minimum: 0
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_json
+                - invalid_threads
+                - invalid_query
+                - invalid_mode
+                - unsupported_mode
+                - index_not_ready
+                - index_build_in_progress
+                - not_found
+                - method_not_allowed
+                - payload_too_large
+                - server_busy
+                - dataset_unavailable
+                - index_build_failed
+                - internal_error
+            message:
+              type: string
+    # --- WebSocket /ws/search message schemas (see 06 section 4) ---
+    WsClientQuery:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 1
+    WsQueryExpansionEvent:
+      type: object
+      additionalProperties: false
+      required: [stage, data]
+      properties:
+        stage:
+          type: string
+          enum: [query_expansion]
+        data:
+          type: object
+          additionalProperties: false
+          required: [original, expanded_terms]
+          properties:
+            original:
+              type: string
+            expanded_terms:
+              type: array
+              items:
+                type: string
+    WsKeywordSearchEvent:
+      type: object
+      additionalProperties: false
+      required: [stage, data]
+      properties:
+        stage:
+          type: string
+          enum: [keyword_search]
+        data:
+          type: object
+          additionalProperties: false
+          required: [results, time_ms]
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/SearchResult"
+            time_ms:
+              type: integer
+              minimum: 0
+    WsDoneEvent:
+      description: "Server sends exactly {\"stage\":\"done\"} (proposal OQ-31, assignment contradiction C-07)."
+      type: object
+      additionalProperties: false
+      required: [stage]
+      properties:
+        stage:
+          type: string
+          enum: [done]
+    WsErrorEvent:
+      description: Proposed (OQ-11, DEV-01). Not part of the assignment contract.
+      type: object
+      additionalProperties: false
+      required: [stage, data]
+      properties:
+        stage:
+          type: string
+          enum: [error]
+        data:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_json, invalid_query, index_not_ready, pipeline_busy, internal_error]
+            message:
+              type: string
