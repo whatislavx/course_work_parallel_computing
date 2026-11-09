@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  validateQuery, formatScore, resultsFromEvent, errorMessageFromEvent, classifyStage,
+  validateQuery, formatScore, resultsFromEvent, errorMessageFromEvent, classifyStage, progressStates,
 } from '../static/app.js';
 
 test('empty or blank query is not sent and gets a hint (BDD-WEB-05)', () => {
@@ -58,4 +58,11 @@ test('done without data is accepted as completion (BDD-WEB-04)', () => {
 
 test('query_expansion is classified as an expansion stage, not as results', () => {
   assert.equal(classifyStage({ stage: 'query_expansion', data: {} }).type, 'expansion');
+});
+
+test('progress marks passed stages done and the current stage active (FR-033)', () => {
+  assert.deepEqual(progressStates('query_expansion').map((i) => i.state), ['active', 'pending', 'pending']);
+  assert.deepEqual(progressStates('keyword_search').map((i) => i.state), ['done', 'active', 'pending']);
+  assert.deepEqual(progressStates('done').map((i) => i.state), ['done', 'done', 'done']);
+  assert.deepEqual(progressStates(null).map((i) => i.state), ['pending', 'pending', 'pending']);
 });

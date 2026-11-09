@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Результати · Sherlok</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="results">
+  <header>
+    <a class="logo" href="index.html" aria-label="Sherlok">
+      <svg class="logo-mark" viewBox="0 0 40 40" aria-hidden="true">
+        <rect width="40" height="40" rx="12" fill="#14120f"/>
+        <path d="M27.2 13.2C26.6 11 24 9.6 20 9.6c-4.4 0-7.2 1.9-7.2 5.1 0 3.3 2.9 4.5 7.1 5.6 4.4 1.2 7.4 2.4 7.4 6.2 0 3.4-3 5.5-7.5 5.5-4.1 0-6.9-1.6-7.6-4.4" fill="none" stroke="#fffdf9" stroke-width="3.4" stroke-linecap="round"/>
+        <circle cx="30.6" cy="9.4" r="2.6" fill="#ff5e4d"/>
+      </svg>
+      <span class="logo-word">Sherlok</span>
+    </a>
+    <nav class="topnav"><a class="nav" href="about.html">Про сервіс</a></nav>
+  </header>
+  <main class="page">
+    <form id="search-form" class="compact-form" action="results.html" method="get" novalidate>
+      <input type="text" id="query" name="q" autocomplete="off" aria-label="Запит">
+      <button type="submit" id="search-button" aria-label="Знайти"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
+    </form>
+    <p class="meta"><span id="hint" role="status"></span></p>
+    <ol id="progress" class="progress" aria-label="Стан пошуку" hidden></ol>
+    <p class="count"><span id="status" role="status"></span></p>
+    <ol id="results"></ol>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
