@@ -2,32 +2,62 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Результати · Sherlok</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Результати — Sherlok</title>
+  <meta name="description" content="Sherlok — швидкий пошук потрібних документів.">
+  <meta name="theme-color" content="#ff8a72">
+  <meta property="og:title" content="Результати — Sherlok">
+  <meta property="og:description" content="Sherlok — швидкий пошук потрібних документів.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v=bfe27417">
 </head>
 <body data-page="results">
+  <a class="skip" href="#main" data-skip>Перейти до вмісту</a>
   <header>
-    <a class="logo" href="index.html" aria-label="Sherlok">
-      <svg class="logo-mark" viewBox="0 0 40 40" aria-hidden="true">
-        <rect width="40" height="40" rx="12" fill="#14120f"/>
-        <path d="M27.2 13.2C26.6 11 24 9.6 20 9.6c-4.4 0-7.2 1.9-7.2 5.1 0 3.3 2.9 4.5 7.1 5.6 4.4 1.2 7.4 2.4 7.4 6.2 0 3.4-3 5.5-7.5 5.5-4.1 0-6.9-1.6-7.6-4.4" fill="none" stroke="#fffdf9" stroke-width="3.4" stroke-linecap="round"/>
-        <circle cx="30.6" cy="9.4" r="2.6" fill="#ff5e4d"/>
-      </svg>
-      <span class="logo-word">Sherlok</span>
-    </a>
-    <nav class="topnav"><a class="nav" href="about.html">Про сервіс</a></nav>
+    <a class="logo" href="/" aria-label="Sherlok, на головну"><svg class="logo-mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="12" fill="#14120f"/><path d="M27.2 13.2C26.6 11 24 9.6 20 9.6c-4.4 0-7.2 1.9-7.2 5.1 0 3.3 2.9 4.5 7.1 5.6 4.4 1.2 7.4 2.4 7.4 6.2 0 3.4-3 5.5-7.5 5.5-4.1 0-6.9-1.6-7.6-4.4" fill="none" stroke="#fffdf9" stroke-width="3.4" stroke-linecap="round"/><circle cx="30.6" cy="9.4" r="2.6" fill="#ff5e4d"/></svg><span class="logo-word">Sherlok</span></a>
+    <nav class="topnav" aria-label="Основна навігація"><a class="nav" href="/about.html">Інструкція</a></nav>
   </header>
-  <main class="page">
-    <form id="search-form" class="compact-form" action="results.html" method="get" novalidate>
-      <input type="text" id="query" name="q" autocomplete="off" aria-label="Запит">
+  <main id="main" class="page">
+    <form id="search-form" class="compact-form" action="/results.html" method="get" role="search" novalidate>
+      <label class="sr-only" for="query">Запит</label>
+      <input type="text" id="query" name="q" placeholder="Що шукаєте?" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="200">
       <button type="submit" id="search-button" aria-label="Знайти"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
     </form>
-    <p class="meta"><span id="hint" role="status"></span></p>
-    <ol id="progress" class="progress" aria-label="Стан пошуку" hidden></ol>
-    <p class="count"><span id="status" role="status"></span></p>
+    <p class="meta"><span id="hint" role="status" aria-live="polite"></span></p>
+    <p class="count"><span id="status" role="status" aria-live="polite"></span></p>
+    <ol id="progress" class="stepper" aria-label="Етапи пошуку" hidden></ol>
     <ol id="results"></ol>
   </main>
-  <script type="module" src="app.js"></script>
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <strong>Sherlok</strong>
+          <p>Пошук документів за секунди: введіть запит і отримайте найвідповідніші результати.</p>
+          <ul class="social" aria-label="Соціальні мережі">
+            <li><a href="https://github.com/" target="_blank" rel="noopener noreferrer" aria-label="GitHub"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg></a></li>
+            <li><a href="https://telegram.org/" target="_blank" rel="noopener noreferrer" aria-label="Telegram"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></a></li>
+            <li><a href="https://www.linkedin.com/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a></li>
+            <li><a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a></li>
+          </ul>
+        </div>
+        <nav class="footer-col" aria-label="Сервіс">
+          <h2>Сервіс</h2>
+          <a href="/">Пошук</a>
+          <a href="/about.html">Інструкція</a>
+        </nav>
+        <nav class="footer-col" aria-label="Ресурси">
+          <h2>Ресурси</h2>
+          <a href="https://github.com/whatislavx/course_work_parallel_computing" target="_blank" rel="noopener noreferrer">Вихідний код</a>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 Sherlok. <span class="footer-note">Навчальний проєкт, КПІ ім. Ігоря Сікорського</span></span>
+              </div>
+    </div>
+  </footer>
+  <script type="module" src="/app.js?v=bfe27417"></script>
+  <script src="/skip.js?v=skip1" defer></script>
 </body>
 </html>
