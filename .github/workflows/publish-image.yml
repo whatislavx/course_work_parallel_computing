@@ -1,5 +1,6 @@
 # Публікація образу сервера в GitHub Packages (ghcr.io).
-# Запускається при створенні тега v* або вручну для наявного тега.
+# Запускається при створенні тега v* або вручну для наявного тега. Спершу проходить CI
+# (ci.yml); образ публікується лише за успішних перевірок.
 name: Publish server image
 
 on:
@@ -20,7 +21,11 @@ permissions:
   packages: write
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    needs: ci
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

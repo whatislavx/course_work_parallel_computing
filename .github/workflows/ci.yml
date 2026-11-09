@@ -1,0 +1,94 @@
+# Безперервна інтеграція: форматування, збірка і тести C++, ThreadSanitizer, тести веб-клієнта,
+# перевірка compose-файла. Викликається також з publish-image.yml перед публікацією образу.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Формат і секрети
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Встановити clang-format
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-format
+      - name: Форматування C++ (clang-format)
+        run: sh scripts/check_format.sh
+      - name: Секрети у відстежуваних файлах
+        run: sh scripts/check_secrets.sh
+      - name: Конвенція комітів (лише для pull request)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          git log --no-merges --format='%s' "origin/${{ github.base_ref }}"..HEAD > /tmp/subjects.txt
+          types='feat|fix|docs|test|refactor|perf|build|ci|chore|style'
+          pattern="^(${types})(\([a-z-]+\))?!?: .{1,72}$"
+          if grep -Ev "$pattern" /tmp/subjects.txt; then
+            echo "FAIL: коміти не відповідають Conventional Commits"; exit 1
+          fi
+
+  build-test:
+    name: Збірка і тести C++ (Debug)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Залежності
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build libboost-dev libboost-json-dev
+      - name: Конфігурація
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: Збірка (з -Werror)
+        run: cmake --build build -j
+      - name: Тести
+        run: ctest --test-dir build --output-on-failure
+
+  tsan:
+    name: Гонки даних (ThreadSanitizer)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Залежності
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build libboost-dev libboost-json-dev
+      - name: Конфігурація з ThreadSanitizer
+        run: cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSEARCH_SANITIZER=thread
+      - name: Збірка
+        run: cmake --build build-tsan -j
+      - name: Тести під TSan (без рандомізації адресного простору)
+        run: setarch -R ctest --test-dir build-tsan --output-on-failure
+      - name: Попередження TSan — помилка
+        if: failure()
+        run: |
+          echo "Перевірте журнал: WARNING ThreadSanitizer означає гонку даних"
+
+  web:
+    name: Тести веб-клієнта (Node.js)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: node --test
+        run: node --test web/test/app.test.mjs
+
+  compose:
+    name: Перевірка docker compose
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Конфігурація compose (без .env)
+        run: docker compose -f docker-compose.yml config -q
