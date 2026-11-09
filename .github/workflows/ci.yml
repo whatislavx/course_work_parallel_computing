@@ -1,0 +1,94 @@
+# Безперервна інтеграція: форматування, збірка і тести C++, ThreadSanitizer, тести веб-клієнта,
+# перевірка compose-файла. Викликається також з publish-image.yml перед публікацією образу.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Format and secrets
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-format
+      - name: C++ formatting (clang-format)
+        run: sh scripts/check_format.sh
+      - name: Secrets in tracked files
+        run: sh scripts/check_secrets.sh
+      - name: Commit convention (pull requests only)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          git log --no-merges --format='%s' "origin/${{ github.base_ref }}"..HEAD > /tmp/subjects.txt
+          types='feat|fix|docs|test|refactor|perf|build|ci|chore|style'
+          pattern="^(${types})(\([a-z-]+\))?!?: .{1,72}$"
+          if grep -Ev "$pattern" /tmp/subjects.txt; then
+            echo "FAIL: commits do not follow Conventional Commits"; exit 1
+          fi
+
+  build-test:
+    name: C++ build and tests (Debug)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build libboost-dev libboost-json-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: Build (with -Werror)
+        run: cmake --build build -j
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
+
+  tsan:
+    name: Data races (ThreadSanitizer)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build libboost-dev libboost-json-dev
+      - name: Configure with ThreadSanitizer
+        run: cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSEARCH_SANITIZER=thread
+      - name: Build
+        run: cmake --build build-tsan -j
+      - name: Tests under TSan (ASLR disabled)
+        run: setarch -R ctest --test-dir build-tsan --output-on-failure
+      - name: TSan warning - failure
+        if: failure()
+        run: |
+          echo "Check the log: WARNING: ThreadSanitizer means a data race"
+
+  web:
+    name: Web client tests (Node.js)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: node --test
+        run: node --test web/test/app.test.mjs
+
+  compose:
+    name: Docker compose check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose configuration (without .env)
+        run: docker compose -f docker-compose.yml config -q
