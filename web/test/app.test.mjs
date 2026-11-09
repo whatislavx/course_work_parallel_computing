@@ -134,3 +134,12 @@ test('keyword detail shows server time and document count', () => {
 test('done detail shows total measured time', () => {
   assert.equal(stageDetail('done', { elapsed_ms: 340 }), 'загалом 340 мс');
 });
+
+test('handoff marks query expansion done and keeps keyword search pending', () => {
+  const states = progressStates('handoff').map((item) => [item.stage, item.state]);
+  assert.deepEqual(states, [
+    ['query_expansion', 'done'],
+    ['keyword_search', 'pending'],
+    ['done', 'pending'],
+  ]);
+});
