@@ -45,6 +45,9 @@ struct Config {
     // Паралелізм (TCK-019, OQ-35): значення тимчасові.
     std::size_t search_worker_threads = 0; // SEARCH_WORKER_THREADS; 0 = логічні процесори
     std::size_t max_concurrent_connections = 64; // MAX_CONCURRENT_CONNECTIONS
+    // INDEX_ON_START: після старту сервер сам будує індекс з DATASET_DIR (потоки як у
+    // DEFAULT_INDEX_THREADS). Вимагає DATASET_DIR; помилка побудови не зупиняє сервер.
+    bool index_on_start = false;
 };
 
 // Розбирає і валідує конфігурацію з довільного джерела (для тестів і для оточення).

@@ -2,6 +2,7 @@
 
 #include "ollama/endpoint.hpp"
 
+#include <cctype>
 #include <charconv>
 #include <cstdlib>
 #include <string>
@@ -28,6 +29,21 @@ std::string parse_non_empty(std::string_view name, const std::string &raw) {
         throw ConfigError(std::string(name) + ": значення не може бути порожнім");
     }
     return raw;
+}
+
+bool parse_bool(std::string_view name, const std::string &raw) {
+    std::string lower;
+    for (const char c : raw) {
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    if (lower == "true" || lower == "1") {
+        return true;
+    }
+    if (lower == "false" || lower == "0") {
+        return false;
+    }
+    throw ConfigError(std::string(name) + ": очікується true, false, 1 або 0, отримано '" + raw +
+                      "'");
 }
 
 } // namespace
@@ -87,6 +103,12 @@ Config parse_config(const EnvLookup &lookup) {
     }
     if (const auto v = lookup("SHUTDOWN_TIMEOUT_MS")) {
         cfg.shutdown_timeout_ms = parse_integer<std::size_t>("SHUTDOWN_TIMEOUT_MS", *v, 1, 600000);
+    }
+    if (const auto v = lookup("INDEX_ON_START")) {
+        cfg.index_on_start = parse_bool("INDEX_ON_START", *v);
+    }
+    if (cfg.index_on_start && cfg.dataset_dir.empty()) {
+        throw ConfigError("INDEX_ON_START: потрібна змінна DATASET_DIR");
     }
     if (const auto v = lookup("OLLAMA_URL")) {
         cfg.ollama_url = parse_non_empty("OLLAMA_URL", *v);

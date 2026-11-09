@@ -65,9 +65,10 @@ class Generate : public std::enable_shared_from_this<Generate> {
     }
 
     void send_request() {
-        boost::json::object body{
-            {"model", endpoint_.model}, {"prompt", prompt_}, {"stream", false},
-            {"options", boost::json::object{{"temperature", 0}}}};
+        boost::json::object body{{"model", endpoint_.model},
+                                 {"prompt", prompt_},
+                                 {"stream", false},
+                                 {"options", boost::json::object{{"temperature", 0}}}};
         request_.version(11);
         request_.method(http::verb::post);
         request_.target("/api/generate");
@@ -126,8 +127,11 @@ class Generate : public std::enable_shared_from_this<Generate> {
 } // namespace
 
 std::string build_expansion_prompt(std::string_view query, std::size_t max_terms) {
-    return "List " + std::to_string(max_terms) + " English synonyms or closely related words for the "
-           "search term \"" + std::string(query) + "\". Output only the words, separated by commas, "
+    return "List " + std::to_string(max_terms) +
+           " English synonyms or closely related words for the "
+           "search term \"" +
+           std::string(query) +
+           "\". Output only the words, separated by commas, "
            "no explanations.\nSynonyms:";
 }
 
