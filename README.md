@@ -14,6 +14,7 @@ docker compose up --build
 ```
 
 Після старту:
+- Індекс будується автоматично при старті сервера (`INDEX_ON_START=true`); готовність видно в `GET /api/stats` (`documents` > 0). Перебудувати вручну: `POST /api/index`.
 - Web UI: `http://localhost:8081/`
 - Перевірка готовності: `curl -s http://localhost:8081/api/health` → `{"status":"ok","ollama":true}`
 
@@ -170,7 +171,7 @@ node --test web/test/app.test.mjs
 
 Параметри читаються з змінних середовища. Приклад — у `.env.example`. Значення за замовчуванням і межі — у `src/config/config.hpp`. Compose передає в сервер значення з `.env` (`env_file`); значення, задані в `environment:` у `docker-compose.yml`, мають пріоритет.
 
-Ключові змінні: `SERVER_PORT`, `DATASET_DIR`, `DATASET_HOST_DIR`, `DEFAULT_INDEX_THREADS`, `MAX_INDEX_THREADS`, `MAX_REQUEST_BODY_BYTES`, `REQUEST_TIMEOUT_MS`, `SHUTDOWN_TIMEOUT_MS`, `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS`, `SEARCH_TOP_K`, `MAX_QUERY_LENGTH`, `SNIPPET_MAX_CHARS`, `MAX_EXPANDED_TERMS`.
+Ключові змінні: `SERVER_PORT`, `DATASET_DIR`, `DATASET_HOST_DIR`, `INDEX_ON_START`, `DEFAULT_INDEX_THREADS`, `MAX_INDEX_THREADS`, `MAX_REQUEST_BODY_BYTES`, `REQUEST_TIMEOUT_MS`, `SHUTDOWN_TIMEOUT_MS`, `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS`, `SEARCH_TOP_K`, `MAX_QUERY_LENGTH`, `SNIPPET_MAX_CHARS`, `MAX_EXPANDED_TERMS`.
 
 ## Структура репозиторію
 

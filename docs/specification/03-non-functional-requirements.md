@@ -228,7 +228,7 @@
 
 ### NFR-019. Конфігурованість експлуатаційних параметрів
 - **Категорія:** Maintainability / Portability.
-- **Опис:** Порт сервера, URL Ollama, назва моделі, шлях до датасету, `threads` за замовчуванням, `MAX_INDEX_THREADS`, `SEARCH_TOP_K`, `SNIPPET_MAX_CHARS`, `MAX_QUERY_LENGTH`, `MAX_EXPANDED_TERMS`, `OLLAMA_TIMEOUT_MS`, `HEALTH_CHECK_TIMEOUT_MS`, `MAX_REQUEST_BODY_BYTES`, `INDEX_REQUEST_TIMEOUT_MS`, `POOL_QUEUE_CAPACITY`, `MAX_CONCURRENT_CONNECTIONS`, `SHUTDOWN_TIMEOUT_MS` задаються конфігурацією (змінні оточення), а не константами в коді.
+- **Опис:** Порт сервера, URL Ollama, назва моделі, шлях до датасету, `threads` за замовчуванням, `INDEX_ON_START`, `MAX_INDEX_THREADS`, `SEARCH_TOP_K`, `SNIPPET_MAX_CHARS`, `MAX_QUERY_LENGTH`, `MAX_EXPANDED_TERMS`, `OLLAMA_TIMEOUT_MS`, `HEALTH_CHECK_TIMEOUT_MS`, `MAX_REQUEST_BODY_BYTES`, `INDEX_REQUEST_TIMEOUT_MS`, `POOL_QUEUE_CAPACITY`, `MAX_CONCURRENT_CONNECTIONS`, `SHUTDOWN_TIMEOUT_MS` задаються конфігурацією (змінні оточення), а не константами в коді.
 - **Обґрунтування:** `.claude/rules/code-quality.md` §11.
 - **Джерело:** P.
 - **Пріоритет / Походження:** Must / P (від неї залежать Must-вимоги FR-003, NFR-020).
