@@ -67,6 +67,12 @@ export const STAGE_LABELS = {
 
 // Стан кожного етапу за останнім отриманим: пройдені — done, поточний — active, решта — pending.
 export function progressStates(lastStage) {
+  // Передача між етапами: уточнення завершено, пошук ще не почався.
+  if (lastStage === 'handoff') {
+    return STAGE_ORDER.map((stage) => ({
+      stage, label: STAGE_LABELS[stage], state: stage === 'query_expansion' ? 'done' : 'pending',
+    }));
+  }
   const index = STAGE_ORDER.indexOf(lastStage);
   return STAGE_ORDER.map((stage, position) => {
     let state = 'pending';
@@ -309,8 +315,9 @@ function runSearch(query) {
         elapsed_ms: elapsed(),
       });
       renderProgress('query_expansion', details);
-      await wait(STAGE_PAUSE_MS);
     } else if (model.type === 'results') {
+      renderProgress('handoff', details);
+      await wait(STAGE_PAUSE_MS);
       details.keyword_search = stageDetail('keyword_search', {
         time_ms: event.data?.time_ms ?? 0,
         count: model.items.length,
