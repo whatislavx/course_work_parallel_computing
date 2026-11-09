@@ -1,3 +1,5 @@
+> **Замінено.** Цей документ — рання чернетка. Джерело істини: `docs/specification/` (див. `docs/specification/13-change-log.md`).
+
 # Acceptance criteria
 
 Points come from the grading table in the assignment (up to 60 points for automatic checks, 40 for the defense).

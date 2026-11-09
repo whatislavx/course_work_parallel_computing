@@ -1,3 +1,5 @@
+> **Замінено.** Цей документ — рання чернетка. Джерело істини: `docs/specification/` (див. `docs/specification/13-change-log.md`).
+
 # Non-functional requirements
 
 | ID | Requirement | Measure |

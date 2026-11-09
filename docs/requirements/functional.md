@@ -1,3 +1,5 @@
+> **Замінено.** Цей документ — рання чернетка. Джерело істини: `docs/specification/` (див. `docs/specification/13-change-log.md`).
+
 # Functional requirements
 
 Source: Appendix A of `Курсова_ПО_2026-2027.pdf`.
