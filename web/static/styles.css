@@ -117,9 +117,12 @@ button[type=submit]:focus-visible { outline: 3px solid var(--hot); outline-offse
 }
 .doc-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
 .score {
-  font-size: 13px; font-weight: 700; color: var(--paper); background: var(--hot);
-  padding: 3px 12px; border-radius: 999px; font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-2);
+  background: rgba(20,18,15,.06); padding: 4px 12px 4px 10px; border-radius: 999px; font-variant-numeric: tabular-nums;
 }
+/* Смужка показує бал відносно найкращого документа видачі */
+.score-bar { flex: none; width: 36px; height: 6px; border-radius: 3px; background: rgba(20,18,15,.12); overflow: hidden; position: relative; }
+.score-bar::after { content: ""; position: absolute; inset: 0; width: calc(var(--share, 0) * 100%); background: var(--hot); border-radius: inherit; }
 .snippet { margin: 8px 0 0; color: var(--ink-2); font-size: 16px; overflow-wrap: anywhere; }
 
 /* about */

@@ -11,20 +11,23 @@ export function validateQuery(raw) {
 }
 
 export function formatScore(score) {
-  return Number(score).toFixed(4);
+  return Number(score).toFixed(2);
 }
 
 // Підпис бала в картці результату: пояснює, що число — релевантність документа запиту.
 export function scoreLabel(score) {
-  return `релевантність ${score}`;
+  return `Релевантність ${score}`;
 }
 
 // Подія keyword_search → модель результатів у порядку відповіді (BDD-WEB-02).
 export function resultsFromEvent(event) {
-  const items = (event?.data?.results ?? []).map((hit) => ({
+  const hits = event?.data?.results ?? [];
+  const best = Math.max(...hits.map((hit) => Number(hit.score)), 0);
+  const items = hits.map((hit) => ({
     docId: String(hit.doc_id),
     title: String(hit.title || hit.doc_id),
     score: formatScore(hit.score),
+    share: best > 0 ? Number(hit.score) / best : 0,
     snippet: String(hit.snippet ?? ''),
   }));
   return { items, empty: items.length === 0 };
@@ -183,7 +186,13 @@ function render(model) {
     title.textContent = item.title;
     const score = document.createElement('span');
     score.className = 'score';
-    score.textContent = scoreLabel(item.score);
+    score.style.setProperty('--share', item.share.toFixed(3));
+    const bar = document.createElement('span');
+    bar.className = 'score-bar';
+    bar.setAttribute('aria-hidden', 'true');
+    const value = document.createElement('span');
+    value.textContent = scoreLabel(item.score);
+    score.append(bar, value);
     score.title = 'Релевантність: чим більше, тим краще документ відповідає запиту (сума tf·idf за словами запиту)';
     title.append(score);
     const snippet = document.createElement('p');
