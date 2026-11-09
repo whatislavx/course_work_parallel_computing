@@ -128,7 +128,7 @@ test('expansion detail says so when no extra terms were added (fallback)', () =>
 });
 
 test('keyword detail shows server time and document count', () => {
-  assert.equal(stageDetail('keyword_search', { time_ms: 12, count: 3 }), 'за 12 мс на сервері · документів: 3');
+  assert.equal(stageDetail('keyword_search', { time_ms: 12, count: 3 }), 'за 12 мс · документів: 3');
 });
 
 test('done detail shows total measured time', () => {

@@ -96,7 +96,7 @@ export function stageDetail(stage, payload) {
         : `за ${payload.elapsed_ms} мс · без додаткових слів`;
     }
     case 'keyword_search':
-      return `за ${payload.time_ms} мс на сервері · документів: ${payload.count}`;
+      return `за ${payload.time_ms} мс · документів: ${payload.count}`;
     case 'done':
       return `загалом ${payload.elapsed_ms} мс`;
     default:
